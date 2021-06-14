@@ -810,8 +810,6 @@ func TestLDInstructions22(t *testing.T) {
 			// 	"Wrong value in Flag C. Expected %v, got %v",
 			// )
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1020,11 +1018,12 @@ func TestADDInstructions1(t *testing.T) {
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() + *registers[testCase.From])
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := *registers[testCase.From]
+			flagZ := value1+value2 == 0
 			flagN := false
-			flagH := (c.Registers.GetA()&0xF)+(*registers[testCase.From]&0xF) > 0xF
-			flagC := uint16(c.Registers.GetA())+uint16(*registers[testCase.From]) > 0xFF
+			flagH := (value1&0xF)+(value2&0xF) > 0xF
+			flagC := uint16(value1)+uint16(value2) > 0xFF
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1052,13 +1051,11 @@ func TestADDInstructions1(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1+value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1102,13 +1099,13 @@ func TestADDInstructions2(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(pcBeforeExec + 1)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() + immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(pcBeforeExec + 1)
+			flagZ := value1+value2 == 0
 			flagN := false
-			flagH := (c.Registers.GetA()&0xF)+(immediateData&0xF) > 0xF
-			flagC := uint16(c.Registers.GetA())+uint16(immediateData) > 0xFF
+			flagH := (value1&0xF)+(value2&0xF) > 0xF
+			flagC := uint16(value1)+uint16(value2) > 0xFF
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1136,13 +1133,11 @@ func TestADDInstructions2(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1+value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1186,13 +1181,13 @@ func TestADDInstructions3(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(c.Registers.GetHL())
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() + immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(c.Registers.GetHL())
+			flagZ := value1+value2 == 0
 			flagN := false
-			flagH := (c.Registers.GetA()&0xF)+(immediateData&0xF) > 0xF
-			flagC := uint16(c.Registers.GetA())+uint16(immediateData) > 0xFF
+			flagH := (value1&0xF)+(value2&0xF) > 0xF
+			flagC := uint16(value1)+uint16(value2) > 0xFF
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1220,13 +1215,11 @@ func TestADDInstructions3(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1+value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1281,10 +1274,11 @@ func TestADDInstructions4(t *testing.T) {
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
-			value := c.Registers.GetHL() + registers[testCase.From]()
+			value1 := c.Registers.GetHL()
+			value2 := registers[testCase.From]()
 			flagN := false
-			flagH := (c.Registers.GetHL()&0xFFF)+(registers[testCase.From]()&0xFFF) > 0xFFF
-			flagC := uint32(c.Registers.GetHL())+uint32(registers[testCase.From]()) > 0xFFFF
+			flagH := (value1&0xFFF)+(value2&0xFFF) > 0xFFF
+			flagC := uint32(value1)+uint32(value2) > 0xFFFF
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1306,13 +1300,11 @@ func TestADDInstructions4(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1+value2,
 				c.Registers.GetHL(),
 				"Wrong value in register HL. Expected 0x%04X, got 0x%04X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1357,29 +1349,24 @@ func TestADDInstructions5(t *testing.T) {
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
-			immediateData := int(c.ReadMemory(pcBeforeExec + 1))
-			immediateData = (immediateData & 127) - (immediateData & 128)
-			value := uint16(int(c.Registers.GetSP()) + immediateData)
+			value1 := int(c.Registers.GetSP())
+			value2 := int(c.ReadMemory(pcBeforeExec + 1))
+			value2 = (value2 & 127) - (value2 & 128)
 			testCase.Instruction.Exec(&c)
-			// if immediateData > int(c.Registers.SP) && !c.Flags.H {
-			// 	t.Logf("S8: 0x%04b (%v) (positive: %v)\n", immediateData&0xF, int(immediateData&0xF), immediateData > 0)
-			// 	t.Logf("SP: 0x%04b (%v)\n", c.Registers.SP&0xF, int(c.Registers.SP&0xF))
-			// 	t.Logf("HC: %v\n", c.Flags.H)
-			// }
 			flagZ := false
 			flagN := false
-			// if immediateData < 0 {
-			// 	c.Flags.SetH((sp & 0xF) < (immediateData & 0xF))
-			// 	c.Flags.SetC((sp & 0xFF) < (immediateData & 0xFF))
-			// } else {
-			// 	c.Flags.SetH((sp&0xF)+(s8&0xF) > 0xF)
-			// 	c.Flags.SetC((sp&0xFF)+(s8&0xFF) > 0xFF)
-			// }
-			// flagH := (c.Registers.GetA()&0xF)+(*registers[testCase.From]&0xF) > 0xF
-			// flagC := uint16(c.Registers.GetA())+uint16(*registers[testCase.From]) > 0xFF
+			flagH := false
+			flagC := false
+			if value2 < 0 {
+				flagH = (value1 & 0xF) < (value2 & 0xF)
+				flagC = (value1 & 0xFF) < (value2 & 0xFF)
+			} else {
+				flagH = (value1&0xF)+(value2&0xF) > 0xF
+				flagC = (value1&0xFF)+(value2&0xFF) > 0xFF
+			}
 			tests.Equals(
 				t,
-				value,
+				uint16(value1+value2),
 				c.Registers.GetSP(),
 				"Wrong value in register SP. Expected 0x%02X, got 0x%02X",
 			)
@@ -1395,21 +1382,19 @@ func TestADDInstructions5(t *testing.T) {
 				c.Flags.N,
 				"Wrong value in Flag N. Expected %v, got %v",
 			)
-			// tests.Equals(
-			// 	t,
-			// 	flagH,
-			// 	c.Flags.H,
-			// 	"Wrong value in Flag H. Expected %v, got %v",
-			// )
-			// tests.Equals(
-			// 	t,
-			// 	flagC,
-			// 	c.Flags.C,
-			// 	"Wrong value in Flag C. Expected %v, got %v",
-			// )
+			tests.Equals(
+				t,
+				flagH,
+				c.Flags.H,
+				"Wrong value in Flag H. Expected %v, got %v",
+			)
+			tests.Equals(
+				t,
+				flagC,
+				c.Flags.C,
+				"Wrong value in Flag C. Expected %v, got %v",
+			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1471,11 +1456,12 @@ func TestADCInstructions1(t *testing.T) {
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
 			carry := c.Flags.GetCarryAsValue()
-			value := uint8(c.Registers.GetA() + *registers[testCase.From] + carry)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := *registers[testCase.From]
+			flagZ := value1+value2+carry == 0
 			flagN := false
-			flagH := (c.Registers.GetA()&0xF)+(*registers[testCase.From]&0xF)+carry > 0xF
-			flagC := uint16(c.Registers.GetA())+uint16(*registers[testCase.From])+uint16(carry) > 0xFF
+			flagH := (value1&0xF)+(value2&0xF)+carry > 0xF
+			flagC := uint16(value1)+uint16(value2)+uint16(carry) > 0xFF
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1503,13 +1489,11 @@ func TestADCInstructions1(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1+value2+carry,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1553,14 +1537,14 @@ func TestADCInstructions2(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(pcBeforeExec + 1)
 			c.ReadPC()
 			carry := c.Flags.GetCarryAsValue()
-			value := uint8(c.Registers.GetA() + immediateData + carry)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(pcBeforeExec + 1)
+			flagZ := value1+value2+carry == 0
 			flagN := false
-			flagH := (c.Registers.GetA()&0xF)+(immediateData&0xF)+carry > 0xF
-			flagC := uint16(c.Registers.GetA())+uint16(immediateData)+uint16(carry) > 0xFF
+			flagH := (value1&0xF)+(value2&0xF)+carry > 0xF
+			flagC := uint16(value1)+uint16(value2)+uint16(carry) > 0xFF
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1588,13 +1572,11 @@ func TestADCInstructions2(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1+value2+carry,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1638,14 +1620,14 @@ func TestADCInstructions3(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(c.Registers.GetHL())
 			c.ReadPC()
 			carry := c.Flags.GetCarryAsValue()
-			value := uint8(c.Registers.GetA() + immediateData + carry)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(c.Registers.GetHL())
+			flagZ := value1+value2+carry == 0
 			flagN := false
-			flagH := (c.Registers.GetA()&0xF)+(immediateData&0xF)+carry > 0xF
-			flagC := uint16(c.Registers.GetA())+uint16(immediateData)+uint16(carry) > 0xFF
+			flagH := (value1&0xF)+(value2&0xF)+carry > 0xF
+			flagC := uint16(value1)+uint16(value2)+uint16(carry) > 0xFF
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1673,13 +1655,11 @@ func TestADCInstructions3(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1+value2+carry,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1740,11 +1720,12 @@ func TestSUBInstructions1(t *testing.T) {
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() - *registers[testCase.From])
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := *registers[testCase.From]
+			flagZ := value1-value2 == 0
 			flagN := true
-			flagH := (c.Registers.GetA() & 0xF) < (*registers[testCase.From] & 0xF)
-			flagC := uint16(c.Registers.GetA()) < uint16(*registers[testCase.From])
+			flagH := (value1 & 0xF) < (value2 & 0xF)
+			flagC := uint16(value1) < uint16(value2)
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1772,13 +1753,11 @@ func TestSUBInstructions1(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1-value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1822,13 +1801,13 @@ func TestSUBInstructions2(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(pcBeforeExec + 1)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() - immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(pcBeforeExec + 1)
+			flagZ := value1-value2 == 0
 			flagN := true
-			flagH := (c.Registers.GetA() & 0xF) < (immediateData & 0xF)
-			flagC := uint16(c.Registers.GetA()) < uint16(immediateData)
+			flagH := (value1 & 0xF) < (value2 & 0xF)
+			flagC := uint16(value1) < uint16(value2)
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1856,13 +1835,11 @@ func TestSUBInstructions2(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1-value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -1906,13 +1883,13 @@ func TestSUBInstructions3(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(c.Registers.GetHL())
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() - immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(c.Registers.GetHL())
+			flagZ := value1-value2 == 0
 			flagN := true
-			flagH := (c.Registers.GetA() & 0xF) < (immediateData & 0xF)
-			flagC := uint16(c.Registers.GetA()) < uint16(immediateData)
+			flagH := (value1 & 0xF) < (value2 & 0xF)
+			flagC := uint16(value1) < uint16(value2)
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -1940,13 +1917,11 @@ func TestSUBInstructions3(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1-value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2008,11 +1983,12 @@ func TestSBCInstructions1(t *testing.T) {
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
 			carry := c.Flags.GetCarryAsValue()
-			value := uint8(c.Registers.GetA() - *registers[testCase.From] - carry)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := *registers[testCase.From]
+			flagZ := value1-value2-carry == 0
 			flagN := true
-			flagH := (c.Registers.GetA() & 0xF) < ((*registers[testCase.From] & 0xF) + carry)
-			flagC := uint16(c.Registers.GetA()) < (uint16(*registers[testCase.From]) + uint16(carry))
+			flagH := (value1 & 0xF) < ((value2 & 0xF) + carry)
+			flagC := uint16(value1) < (uint16(value2) + uint16(carry))
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -2040,13 +2016,11 @@ func TestSBCInstructions1(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1-value2-carry,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2090,14 +2064,14 @@ func TestSBCInstructions2(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(pcBeforeExec + 1)
 			c.ReadPC()
 			carry := c.Flags.GetCarryAsValue()
-			value := uint8(c.Registers.GetA() - immediateData - carry)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(pcBeforeExec + 1)
+			flagZ := value1-value2-carry == 0
 			flagN := true
-			flagH := (c.Registers.GetA() & 0xF) < ((immediateData & 0xF) + carry)
-			flagC := uint16(c.Registers.GetA()) < (uint16(immediateData) + uint16(carry))
+			flagH := (value1 & 0xF) < ((value2 & 0xF) + carry)
+			flagC := uint16(value1) < (uint16(value2) + uint16(carry))
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -2125,13 +2099,11 @@ func TestSBCInstructions2(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1-value2-carry,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2175,14 +2147,14 @@ func TestSBCInstructions3(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(c.Registers.GetHL())
 			c.ReadPC()
 			carry := c.Flags.GetCarryAsValue()
-			value := uint8(c.Registers.GetA() - immediateData - carry)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(c.Registers.GetHL())
+			flagZ := value1-value2-carry == 0
 			flagN := true
-			flagH := (c.Registers.GetA() & 0xF) < ((immediateData & 0xF) + carry)
-			flagC := uint16(c.Registers.GetA()) < (uint16(immediateData) + uint16(carry))
+			flagH := (value1 & 0xF) < ((value2 & 0xF) + carry)
+			flagC := uint16(value1) < (uint16(value2) + uint16(carry))
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -2210,13 +2182,11 @@ func TestSBCInstructions3(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1-value2-carry,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2277,8 +2247,9 @@ func TestANDInstructions1(t *testing.T) {
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() & *registers[testCase.From])
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := *registers[testCase.From]
+			flagZ := value1&value2 == 0
 			flagN := false
 			flagH := true
 			flagC := false
@@ -2309,13 +2280,11 @@ func TestANDInstructions1(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1&value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2359,10 +2328,10 @@ func TestANDInstructions2(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(pcBeforeExec + 1)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() & immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(pcBeforeExec + 1)
+			flagZ := value1&value2 == 0
 			flagN := false
 			flagH := true
 			flagC := false
@@ -2393,13 +2362,11 @@ func TestANDInstructions2(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1&value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2443,10 +2410,10 @@ func TestANDInstructions3(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(c.Registers.GetHL())
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() & immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(c.Registers.GetHL())
+			flagZ := value1&value2 == 0
 			flagN := false
 			flagH := true
 			flagC := false
@@ -2477,13 +2444,11 @@ func TestANDInstructions3(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1&value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2544,8 +2509,9 @@ func TestXORInstructions1(t *testing.T) {
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() ^ *registers[testCase.From])
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := *registers[testCase.From]
+			flagZ := value1^value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
@@ -2576,13 +2542,11 @@ func TestXORInstructions1(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1^value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2626,10 +2590,10 @@ func TestXORInstructions2(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(pcBeforeExec + 1)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() ^ immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(pcBeforeExec + 1)
+			flagZ := value1^value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
@@ -2660,13 +2624,11 @@ func TestXORInstructions2(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1^value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2710,10 +2672,10 @@ func TestXORInstructions3(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(c.Registers.GetHL())
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() ^ immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(c.Registers.GetHL())
+			flagZ := value1^value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
@@ -2744,13 +2706,11 @@ func TestXORInstructions3(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1^value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2811,8 +2771,9 @@ func TestORInstructions1(t *testing.T) {
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() & *registers[testCase.From])
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := *registers[testCase.From]
+			flagZ := value1|value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
@@ -2843,13 +2804,11 @@ func TestORInstructions1(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1|value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2893,10 +2852,10 @@ func TestORInstructions2(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(pcBeforeExec + 1)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() & immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(pcBeforeExec + 1)
+			flagZ := value1|value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
@@ -2927,13 +2886,11 @@ func TestORInstructions2(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1|value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -2977,10 +2934,10 @@ func TestORInstructions3(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(c.Registers.GetHL())
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() & immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(c.Registers.GetHL())
+			flagZ := value1|value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
@@ -3011,13 +2968,11 @@ func TestORInstructions3(t *testing.T) {
 			)
 			tests.Equals(
 				t,
-				value,
+				value1|value2,
 				c.Registers.GetA(),
 				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -3110,8 +3065,6 @@ func TestCPInstructions1(t *testing.T) {
 				"Wrong value in Flag C. Expected %v, got %v",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -3155,13 +3108,13 @@ func TestCPInstructions2(t *testing.T) {
 			tests.RandRegisters(&c)
 			pcBeforeExec := c.Registers.GetPC()
 			pcAfterExec := pcBeforeExec + uint16(testCase.Instruction.Length)
-			immediateData := c.ReadMemory(pcBeforeExec + 1)
 			c.ReadPC()
-			value := uint8(c.Registers.GetA() - immediateData)
-			flagZ := value == 0
+			value1 := c.Registers.GetA()
+			value2 := c.ReadMemory(pcBeforeExec + 1)
+			flagZ := value1 == value2
 			flagN := true
-			flagH := (c.Registers.GetA() & 0xF) < (immediateData & 0xF)
-			flagC := uint16(c.Registers.GetA()) < uint16(immediateData)
+			flagH := (value1 & 0xF) < (value2 & 0xF)
+			flagC := value1 < value2
 			testCase.Instruction.Exec(&c)
 			tests.Equals(
 				t,
@@ -3187,15 +3140,7 @@ func TestCPInstructions2(t *testing.T) {
 				c.Flags.C,
 				"Wrong value in Flag C. Expected %v, got %v",
 			)
-			tests.Equals(
-				t,
-				value,
-				c.Registers.GetA(),
-				"Wrong value in register A. Expected 0x%02X, got 0x%02X",
-			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -3272,8 +3217,6 @@ func TestCPInstructions3(t *testing.T) {
 				"Wrong value in Flag C. Expected %v, got %v",
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -3362,11 +3305,9 @@ func TestINCInstructions1(t *testing.T) {
 				t,
 				value2,
 				*registers[testCase.From],
-				fmt.Sprintf("Wrong value in register %v. Expected 0x%%02X. Got 0x%%02X", testCase.From),
+				fmt.Sprintf("Wrong value in register %s. Expected 0x%%02X. Got 0x%%02X", testCase.From),
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -3443,8 +3384,6 @@ func TestINCInstructions2(t *testing.T) {
 				fmt.Sprintf("Wrong value in address 0x%04X. Expected 0x%%02X. Got 0x%%02X", addr),
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -3506,7 +3445,7 @@ func TestINCInstructions3(t *testing.T) {
 				t,
 				value2,
 				registers[testCase.From](),
-				fmt.Sprintf("Wrong value in register %v. Expected 0x%%04X. Got 0x%%04X", testCase.From),
+				fmt.Sprintf("Wrong value in register %s. Expected 0x%%04X. Got 0x%%04X", testCase.From),
 			)
 			tests.Equals(t, pcAfterExec, c.Registers.GetPC(), "Wrong value in register PC. Expected 0x%04X, got 0x%04X")
 		})
@@ -3572,11 +3511,9 @@ func TestDECInstructions1(t *testing.T) {
 				t,
 				value2,
 				*registers[testCase.From],
-				fmt.Sprintf("Wrong value in register %v. Expected 0x%%02X. Got 0x%%02X", testCase.From),
+				fmt.Sprintf("Wrong value in register %s. Expected 0x%%02X. Got 0x%%02X", testCase.From),
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -3653,8 +3590,6 @@ func TestDECInstructions2(t *testing.T) {
 				fmt.Sprintf("Wrong value in address 0x%04X. Expected 0x%%02X. Got 0x%%02X", addr),
 			)
 			flags := c.Registers.GetF()
-			// t.Logf("REG_F: 0x%08b\n", c.Registers.GetF())
-			// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 			tests.Equals(
 				t,
 				flags&(1<<7) == 1<<7,
@@ -3716,7 +3651,7 @@ func TestDECInstructions3(t *testing.T) {
 				t,
 				value2,
 				registers[testCase.From](),
-				fmt.Sprintf("Wrong value in register %v. Expected 0x%%04X. Got 0x%%04X", testCase.From),
+				fmt.Sprintf("Wrong value in register %s. Expected 0x%%04X. Got 0x%%04X", testCase.From),
 			)
 			tests.Equals(t, pcAfterExec, c.Registers.GetPC(), "Wrong value in register PC. Expected 0x%04X, got 0x%04X")
 		})
