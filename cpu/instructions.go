@@ -1558,66 +1558,66 @@ func (c *CPU) InstructionAF() {
 func (c *CPU) InstructionB0() {
 	value1 := c.Registers.GetA()
 	value2 := c.Registers.GetB()
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
 func (c *CPU) InstructionB1() {
 	value1 := c.Registers.GetA()
 	value2 := c.Registers.GetC()
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
 func (c *CPU) InstructionB2() {
 	value1 := c.Registers.GetA()
 	value2 := c.Registers.GetD()
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
 func (c *CPU) InstructionB3() {
 	value1 := c.Registers.GetA()
 	value2 := c.Registers.GetE()
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
 func (c *CPU) InstructionB4() {
 	value1 := c.Registers.GetA()
 	value2 := c.Registers.GetH()
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
 func (c *CPU) InstructionB5() {
 	value1 := c.Registers.GetA()
 	value2 := c.Registers.GetL()
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
@@ -1625,22 +1625,22 @@ func (c *CPU) InstructionB6() {
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
 	value2 := c.ReadMemory(addr)
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
 func (c *CPU) InstructionB7() {
 	value1 := c.Registers.GetA()
 	value2 := c.Registers.GetA()
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
@@ -1996,11 +1996,11 @@ func (c *CPU) InstructionF5() {
 func (c *CPU) InstructionF6() {
 	value1 := c.Registers.GetA()
 	value2 := c.ReadPC()
-	c.Flags.SetZ(value1&value2 == 0)
+	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
 	c.Flags.SetC(false)
-	c.Registers.SetA(value1 & value2)
+	c.Registers.SetA(value1 | value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
