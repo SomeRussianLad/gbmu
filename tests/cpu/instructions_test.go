@@ -812,25 +812,25 @@ func TestLDInstructions22(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -959,25 +959,25 @@ func TestPOPInstructions(t *testing.T) {
 				// t.Logf("FLAGS: 0x%08b\n", c.Flags.GetFlagsAsValue())
 				tests.Equals(
 					t,
-					flags&(1<<7) == 1<<7,
+					(flags&(1<<7)) == 1<<7,
 					c.Flags.Z,
 					"Wrong value in flag Z. Expected %v, got %v",
 				)
 				tests.Equals(
 					t,
-					flags&(1<<6) == 1<<6,
+					(flags&(1<<6)) == 1<<6,
 					c.Flags.N,
 					"Wrong value in flag N. Expected %v, got %v",
 				)
 				tests.Equals(
 					t,
-					flags&(1<<5) == 1<<5,
+					(flags&(1<<5)) == 1<<5,
 					c.Flags.H,
 					"Wrong value in flag H. Expected %v, got %v",
 				)
 				tests.Equals(
 					t,
-					flags&(1<<4) == 1<<4,
+					(flags&(1<<4)) == 1<<4,
 					c.Flags.C,
 					"Wrong value in flag C. Expected %v, got %v",
 				)
@@ -1058,25 +1058,25 @@ func TestADDInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1140,25 +1140,25 @@ func TestADDInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1222,25 +1222,25 @@ func TestADDInstructions3(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1307,25 +1307,25 @@ func TestADDInstructions4(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1397,25 +1397,25 @@ func TestADDInstructions5(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1496,25 +1496,25 @@ func TestADCInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1579,25 +1579,25 @@ func TestADCInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1662,25 +1662,25 @@ func TestADCInstructions3(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1760,25 +1760,25 @@ func TestSUBInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1842,25 +1842,25 @@ func TestSUBInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -1924,25 +1924,25 @@ func TestSUBInstructions3(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2023,25 +2023,25 @@ func TestSBCInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2106,25 +2106,25 @@ func TestSBCInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2189,25 +2189,25 @@ func TestSBCInstructions3(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2287,25 +2287,25 @@ func TestANDInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2369,25 +2369,25 @@ func TestANDInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2451,25 +2451,25 @@ func TestANDInstructions3(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2549,25 +2549,25 @@ func TestXORInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2631,25 +2631,25 @@ func TestXORInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2713,25 +2713,25 @@ func TestXORInstructions3(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2811,25 +2811,25 @@ func TestORInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2893,25 +2893,25 @@ func TestORInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -2975,25 +2975,25 @@ func TestORInstructions3(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -3067,25 +3067,25 @@ func TestCPInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -3143,25 +3143,25 @@ func TestCPInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -3219,25 +3219,25 @@ func TestCPInstructions3(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -3310,25 +3310,25 @@ func TestINCInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -3386,25 +3386,25 @@ func TestINCInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -3516,25 +3516,25 @@ func TestDECInstructions1(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
@@ -3592,25 +3592,25 @@ func TestDECInstructions2(t *testing.T) {
 			flags := c.Registers.GetF()
 			tests.Equals(
 				t,
-				flags&(1<<7) == 1<<7,
+				(flags&(1<<7)) == 1<<7,
 				c.Flags.Z,
 				"Wrong value in flag Z. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<6) == 1<<6,
+				(flags&(1<<6)) == 1<<6,
 				c.Flags.N,
 				"Wrong value in flag N. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<5) == 1<<5,
+				(flags&(1<<5)) == 1<<5,
 				c.Flags.H,
 				"Wrong value in flag H. Expected %v, got %v",
 			)
 			tests.Equals(
 				t,
-				flags&(1<<4) == 1<<4,
+				(flags&(1<<4)) == 1<<4,
 				c.Flags.C,
 				"Wrong value in flag C. Expected %v, got %v",
 			)
