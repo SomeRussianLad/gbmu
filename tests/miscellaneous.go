@@ -38,11 +38,11 @@ func InitCPU() cpu.CPU {
 // 	return nil
 // }
 
-func InitMemory() memory.Memory {
-	m := memory.NewMemory()
+func InitMemory() *memory.DMGMemory {
+	m := memory.NewDMGMemory()
 	slice := RandSlice(0x10000)
 	for i := range slice {
-		m[i] = uint8(slice[i])
+		m.Write(uint16(i), uint8(slice[i]))
 	}
 	return m
 }
@@ -72,5 +72,19 @@ func RandRegisters(c *cpu.CPU) {
 	c.Registers.SetL(uint8(rand.Int()))
 	c.Registers.SetSP(uint16(rand.Int()))
 	c.Registers.SetPC(uint16(rand.Int()))
-	c.Flags.SetFlagsFromValue(c.Registers.GetA())
+	c.Flags.SetFlagsFromValue(c.Registers.GetF())
+}
+
+func Read8BitOperand(c *cpu.CPU) uint8 {
+	addr := c.Registers.GetPC()
+	value := c.Memory.Read(addr)
+	return value
+}
+
+func Read16BitOperand(c *cpu.CPU) uint16 {
+	addr := c.Registers.GetPC()
+	msb := uint16(c.Memory.Read(addr))
+	lsb := uint16(c.Memory.Read(addr + 1))
+	value := msb<<8 | lsb
+	return value
 }

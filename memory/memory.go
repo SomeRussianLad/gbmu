@@ -14,16 +14,7 @@ package memory
 // FF80-FFFE   High RAM (HRAM)
 // FFFF        Interrupt Enable Register
 
-type Memory [0x10000]uint8
-
-func NewMemory() Memory {
-	return Memory{}
-}
-
-func (m *Memory) ReadMemory(addr uint16) uint8 {
-	return m[addr]
-}
-
-func (m *Memory) WriteMemory(addr uint16, value uint8) {
-	m[addr] = value
+type Memory interface {
+	Read(addr uint16) uint8
+	Write(addr uint16, value uint8)
 }

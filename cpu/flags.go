@@ -35,6 +35,22 @@ func (f *Flags) GetCarryAsValue() uint8 {
 	return 0
 }
 
+// func (c *CPU) GetZ() bool {
+// 	return c.Registers.GetF()%128 == 128
+// }
+
+// func (c *CPU) GetN() bool {
+// 	return c.Registers.GetF()%64 == 64
+// }
+
+// func (c *CPU) GetH() bool {
+// 	return c.Registers.GetF()%32 == 32
+// }
+
+// func (c *CPU) GetC() bool {
+// 	return c.Registers.GetF()%16 == 16
+// }
+
 func (f *Flags) SetZ(v bool) {
 	f.Z = v
 }
@@ -52,8 +68,8 @@ func (f *Flags) SetC(v bool) {
 }
 
 func (f *Flags) SetFlagsFromValue(v uint8) {
-	f.SetZ(v&(1<<7) == 1<<7)
-	f.SetN(v&(1<<6) == 1<<6)
-	f.SetH(v&(1<<5) == 1<<5)
-	f.SetC(v&(1<<4) == 1<<4)
+	f.SetZ(v&128 == 128)
+	f.SetN(v&64 == 64)
+	f.SetH(v&32 == 32)
+	f.SetC(v&16 == 16)
 }

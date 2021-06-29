@@ -274,19 +274,18 @@ func NewInstructions() Instructions {
 	}
 }
 
-func (c *CPU) Instruction00() {}
+func (c *CPU) Instruction00() {
+}
 
 func (c *CPU) Instruction01() {
-	msb := uint16(c.ReadPC())
-	lsb := uint16(c.ReadPC())
-	value := msb<<8 | lsb
+	value := c.read16BitOperand()
 	c.Registers.SetBC(value)
 }
 
 func (c *CPU) Instruction02() {
 	value := c.Registers.GetA()
 	addr := c.Registers.GetBC()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) Instruction03() {
@@ -314,18 +313,28 @@ func (c *CPU) Instruction05() {
 }
 
 func (c *CPU) Instruction06() {
-	value := c.ReadPC()
+	value := c.read8BitOperand()
 	c.Registers.SetB(value)
 }
 
-func (c *CPU) Instruction07() {}
+func (c *CPU) Instruction07() {
+	value := c.Registers.GetA()
+	bit7 := value & (1 << 7)
+	value = (value << 1) + bit7
+	c.Flags.SetZ(false)
+	c.Flags.SetN(false)
+	c.Flags.SetH(false)
+	c.Flags.SetC(bit7 == 1)
+	c.Registers.SetA(value)
+	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
+}
 
 func (c *CPU) Instruction08() {
-	msb := uint16(c.ReadPC())
-	lsb := uint16(c.ReadPC())
-	addr := msb<<8 | lsb
-	c.WriteMemory(addr, c.Registers.GetP())
-	c.WriteMemory(addr+1, c.Registers.GetS())
+	addr := c.read16BitOperand()
+	value1 := c.Registers.GetP()
+	value2 := c.Registers.GetS()
+	c.Memory.Write(addr, value1)
+	c.Memory.Write(addr+1, value2)
 }
 
 func (c *CPU) Instruction09() {
@@ -340,7 +349,7 @@ func (c *CPU) Instruction09() {
 
 func (c *CPU) Instruction0A() {
 	addr := c.Registers.GetBC()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetA(value)
 }
 
@@ -369,25 +378,25 @@ func (c *CPU) Instruction0D() {
 }
 
 func (c *CPU) Instruction0E() {
-	value := c.ReadPC()
+	value := c.read8BitOperand()
 	c.Registers.SetC(value)
 }
 
-func (c *CPU) Instruction0F() {}
+func (c *CPU) Instruction0F() {
+}
 
-func (c *CPU) Instruction10() {}
+func (c *CPU) Instruction10() {
+}
 
 func (c *CPU) Instruction11() {
-	msb := uint16(c.ReadPC())
-	lsb := uint16(c.ReadPC())
-	value := msb<<8 | lsb
+	value := c.read16BitOperand()
 	c.Registers.SetDE(value)
 }
 
 func (c *CPU) Instruction12() {
 	value := c.Registers.GetA()
 	addr := c.Registers.GetDE()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) Instruction13() {
@@ -415,13 +424,25 @@ func (c *CPU) Instruction15() {
 }
 
 func (c *CPU) Instruction16() {
-	value := c.ReadPC()
+	value := c.read8BitOperand()
 	c.Registers.SetD(value)
 }
 
-func (c *CPU) Instruction17() {}
+func (c *CPU) Instruction17() {
+	carry := c.Flags.GetCarryAsValue()
+	value := c.Registers.GetA()
+	bit7 := value & (1 << 7)
+	value = (value << 1) + carry
+	c.Flags.SetZ(false)
+	c.Flags.SetN(false)
+	c.Flags.SetH(false)
+	c.Flags.SetC(bit7 == 1)
+	c.Registers.SetA(value)
+	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
+}
 
-func (c *CPU) Instruction18() {}
+func (c *CPU) Instruction18() {
+}
 
 func (c *CPU) Instruction19() {
 	value1 := c.Registers.GetHL()
@@ -435,7 +456,7 @@ func (c *CPU) Instruction19() {
 
 func (c *CPU) Instruction1A() {
 	addr := c.Registers.GetDE()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetA(value)
 }
 
@@ -464,25 +485,25 @@ func (c *CPU) Instruction1D() {
 }
 
 func (c *CPU) Instruction1E() {
-	value := c.ReadPC()
+	value := c.read8BitOperand()
 	c.Registers.SetE(value)
 }
 
-func (c *CPU) Instruction1F() {}
+func (c *CPU) Instruction1F() {
+}
 
-func (c *CPU) Instruction20() {}
+func (c *CPU) Instruction20() {
+}
 
 func (c *CPU) Instruction21() {
-	msb := uint16(c.ReadPC())
-	lsb := uint16(c.ReadPC())
-	value := msb<<8 | lsb
+	value := c.read16BitOperand()
 	c.Registers.SetHL(value)
 }
 
 func (c *CPU) Instruction22() {
 	value := c.Registers.GetA()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 	c.Registers.IncHL()
 }
 
@@ -511,7 +532,7 @@ func (c *CPU) Instruction25() {
 }
 
 func (c *CPU) Instruction26() {
-	value := c.ReadPC()
+	value := c.read8BitOperand()
 	c.Registers.SetH(value)
 }
 
@@ -519,7 +540,8 @@ func (c *CPU) Instruction27() {
 
 }
 
-func (c *CPU) Instruction28() {}
+func (c *CPU) Instruction28() {
+}
 
 func (c *CPU) Instruction29() {
 	value1 := c.Registers.GetHL()
@@ -533,7 +555,7 @@ func (c *CPU) Instruction29() {
 
 func (c *CPU) Instruction2A() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetA(value)
 	c.Registers.IncHL()
 }
@@ -563,25 +585,25 @@ func (c *CPU) Instruction2D() {
 }
 
 func (c *CPU) Instruction2E() {
-	value := c.ReadPC()
+	value := c.read8BitOperand()
 	c.Registers.SetL(value)
 }
 
-func (c *CPU) Instruction2F() {}
+func (c *CPU) Instruction2F() {
+}
 
-func (c *CPU) Instruction30() {}
+func (c *CPU) Instruction30() {
+}
 
 func (c *CPU) Instruction31() {
-	msb := uint16(c.ReadPC())
-	lsb := uint16(c.ReadPC())
-	value := msb<<8 | lsb
+	value := c.read16BitOperand()
 	c.Registers.SetSP(value)
 }
 
 func (c *CPU) Instruction32() {
 	value := c.Registers.GetA()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 	c.Registers.DecHL()
 }
 
@@ -591,35 +613,37 @@ func (c *CPU) Instruction33() {
 
 func (c *CPU) Instruction34() {
 	addr := c.Registers.GetHL()
-	value1 := c.ReadMemory(addr)
+	value1 := c.Memory.Read(addr)
 	value2 := value1 + 1
 	c.Flags.SetZ(value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(value2&0xF == 0)
-	c.WriteMemory(addr, value2)
+	c.Memory.Write(addr, value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
 func (c *CPU) Instruction35() {
 	addr := c.Registers.GetHL()
-	value1 := c.ReadMemory(addr)
+	value1 := c.Memory.Read(addr)
 	value2 := value1 - 1
 	c.Flags.SetZ(value2 == 0)
 	c.Flags.SetN(true)
 	c.Flags.SetH(value1&0xF == 0)
-	c.WriteMemory(addr, value2)
+	c.Memory.Write(addr, value2)
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
 func (c *CPU) Instruction36() {
-	value := c.ReadPC()
+	value := c.read8BitOperand()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
-func (c *CPU) Instruction37() {}
+func (c *CPU) Instruction37() {
+}
 
-func (c *CPU) Instruction38() {}
+func (c *CPU) Instruction38() {
+}
 
 func (c *CPU) Instruction39() {
 	value1 := c.Registers.GetHL()
@@ -633,7 +657,7 @@ func (c *CPU) Instruction39() {
 
 func (c *CPU) Instruction3A() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetA(value)
 	c.Registers.DecHL()
 }
@@ -663,11 +687,12 @@ func (c *CPU) Instruction3D() {
 }
 
 func (c *CPU) Instruction3E() {
-	value := c.ReadPC()
+	value := c.read8BitOperand()
 	c.Registers.SetA(value)
 }
 
-func (c *CPU) Instruction3F() {}
+func (c *CPU) Instruction3F() {
+}
 
 func (c *CPU) Instruction40() {
 	value := c.Registers.GetB()
@@ -701,7 +726,7 @@ func (c *CPU) Instruction45() {
 
 func (c *CPU) Instruction46() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetB(value)
 }
 
@@ -742,7 +767,7 @@ func (c *CPU) Instruction4D() {
 
 func (c *CPU) Instruction4E() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetC(value)
 }
 
@@ -783,7 +808,7 @@ func (c *CPU) Instruction55() {
 
 func (c *CPU) Instruction56() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetD(value)
 }
 
@@ -824,7 +849,7 @@ func (c *CPU) Instruction5D() {
 
 func (c *CPU) Instruction5E() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetE(value)
 }
 
@@ -865,7 +890,7 @@ func (c *CPU) Instruction65() {
 
 func (c *CPU) Instruction66() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetH(value)
 }
 
@@ -906,7 +931,7 @@ func (c *CPU) Instruction6D() {
 
 func (c *CPU) Instruction6E() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetL(value)
 }
 
@@ -918,45 +943,46 @@ func (c *CPU) Instruction6F() {
 func (c *CPU) Instruction70() {
 	value := c.Registers.GetB()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) Instruction71() {
 	value := c.Registers.GetC()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) Instruction72() {
 	value := c.Registers.GetD()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) Instruction73() {
 	value := c.Registers.GetE()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) Instruction74() {
 	value := c.Registers.GetH()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) Instruction75() {
 	value := c.Registers.GetL()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
-func (c *CPU) Instruction76() {}
+func (c *CPU) Instruction76() {
+}
 
 func (c *CPU) Instruction77() {
 	value := c.Registers.GetA()
 	addr := c.Registers.GetHL()
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) Instruction78() {
@@ -991,7 +1017,7 @@ func (c *CPU) Instruction7D() {
 
 func (c *CPU) Instruction7E() {
 	addr := c.Registers.GetHL()
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetA(value)
 }
 
@@ -1073,7 +1099,7 @@ func (c *CPU) Instruction85() {
 func (c *CPU) Instruction86() {
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadMemory(addr)
+	value2 := c.Memory.Read(addr)
 	c.Flags.SetZ(value1+value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH((value1&0xF)+(value2&0xF) > 0xF)
@@ -1170,7 +1196,7 @@ func (c *CPU) Instruction8E() {
 	carry := c.Flags.GetCarryAsValue()
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadMemory(addr)
+	value2 := c.Memory.Read(addr)
 	c.Flags.SetZ(value1+value2+carry == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH((value1&0xF)+(value2&0xF)+carry > 0xF)
@@ -1260,7 +1286,7 @@ func (c *CPU) Instruction95() {
 func (c *CPU) Instruction96() {
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadMemory(addr)
+	value2 := c.Memory.Read(addr)
 	c.Flags.SetZ(value1-value2 == 0)
 	c.Flags.SetN(true)
 	c.Flags.SetH((value1 & 0xF) < (value2 & 0xF))
@@ -1356,7 +1382,7 @@ func (c *CPU) Instruction9E() {
 	carry := c.Flags.GetCarryAsValue()
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadMemory(addr)
+	value2 := c.Memory.Read(addr)
 	c.Flags.SetZ(value1-value2-carry == 0)
 	c.Flags.SetN(true)
 	c.Flags.SetH((value1 & 0xF) < ((value2 & 0xF) + carry))
@@ -1446,7 +1472,7 @@ func (c *CPU) InstructionA5() {
 func (c *CPU) InstructionA6() {
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadMemory(addr)
+	value2 := c.Memory.Read(addr)
 	c.Flags.SetZ(value1&value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(true)
@@ -1535,7 +1561,7 @@ func (c *CPU) InstructionAD() {
 func (c *CPU) InstructionAE() {
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadMemory(addr)
+	value2 := c.Memory.Read(addr)
 	c.Flags.SetZ(value1^value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
@@ -1624,7 +1650,7 @@ func (c *CPU) InstructionB5() {
 func (c *CPU) InstructionB6() {
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadMemory(addr)
+	value2 := c.Memory.Read(addr)
 	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
@@ -1707,7 +1733,7 @@ func (c *CPU) InstructionBD() {
 func (c *CPU) InstructionBE() {
 	addr := c.Registers.GetHL()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadMemory(addr)
+	value2 := c.Memory.Read(addr)
 	c.Flags.SetZ(value1 == value2)
 	c.Flags.SetN(true)
 	c.Flags.SetH((value1 & 0xF) < (value2 & 0xF))
@@ -1725,35 +1751,39 @@ func (c *CPU) InstructionBF() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionC0() {}
+func (c *CPU) InstructionC0() {
+}
 
 func (c *CPU) InstructionC1() {
 	addr := c.Registers.GetSP()
-	msb := uint16(c.ReadMemory(addr + 1))
-	lsb := uint16(c.ReadMemory(addr))
+	msb := uint16(c.Memory.Read(addr + 1))
+	lsb := uint16(c.Memory.Read(addr))
 	value := msb<<8 | lsb
 	c.Registers.SetBC(value)
 	c.Registers.SetSP(addr + 2)
 }
 
-func (c *CPU) InstructionC2() {}
+func (c *CPU) InstructionC2() {
+}
 
-func (c *CPU) InstructionC3() {}
+func (c *CPU) InstructionC3() {
+}
 
-func (c *CPU) InstructionC4() {}
+func (c *CPU) InstructionC4() {
+}
 
 func (c *CPU) InstructionC5() {
 	msb := c.Registers.GetB()
 	lsb := c.Registers.GetC()
 	addr := c.Registers.GetSP()
-	c.WriteMemory(addr-1, msb)
-	c.WriteMemory(addr-2, lsb)
+	c.Memory.Write(addr-1, msb)
+	c.Memory.Write(addr-2, lsb)
 	c.Registers.SetSP(addr - 2)
 }
 
 func (c *CPU) InstructionC6() {
 	value1 := c.Registers.GetA()
-	value2 := c.ReadPC()
+	value2 := c.read8BitOperand()
 	c.Flags.SetZ(value1+value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH((value1&0xF)+(value2&0xF) > 0xF)
@@ -1762,24 +1792,31 @@ func (c *CPU) InstructionC6() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionC7() {}
+func (c *CPU) InstructionC7() {
+}
 
-func (c *CPU) InstructionC8() {}
+func (c *CPU) InstructionC8() {
+}
 
-func (c *CPU) InstructionC9() {}
+func (c *CPU) InstructionC9() {
+}
 
-func (c *CPU) InstructionCA() {}
+func (c *CPU) InstructionCA() {
+}
 
-func (c *CPU) InstructionCB() {}
+func (c *CPU) InstructionCB() {
+}
 
-func (c *CPU) InstructionCC() {}
+func (c *CPU) InstructionCC() {
+}
 
-func (c *CPU) InstructionCD() {}
+func (c *CPU) InstructionCD() {
+}
 
 func (c *CPU) InstructionCE() {
 	carry := c.Flags.GetCarryAsValue()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadPC()
+	value2 := c.read8BitOperand()
 	c.Flags.SetZ(value1+value2+carry == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH((value1&0xF)+(value2&0xF)+carry > 0xF)
@@ -1788,37 +1825,42 @@ func (c *CPU) InstructionCE() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionCF() {}
+func (c *CPU) InstructionCF() {
+}
 
-func (c *CPU) InstructionD0() {}
+func (c *CPU) InstructionD0() {
+}
 
 func (c *CPU) InstructionD1() {
 	addr := c.Registers.GetSP()
-	msb := uint16(c.ReadMemory(addr + 1))
-	lsb := uint16(c.ReadMemory(addr))
+	msb := uint16(c.Memory.Read(addr + 1))
+	lsb := uint16(c.Memory.Read(addr))
 	value := msb<<8 | lsb
 	c.Registers.SetDE(value)
 	c.Registers.SetSP(addr + 2)
 }
 
-func (c *CPU) InstructionD2() {}
+func (c *CPU) InstructionD2() {
+}
 
-func (c *CPU) InstructionD3() {}
+func (c *CPU) InstructionD3() {
+}
 
-func (c *CPU) InstructionD4() {}
+func (c *CPU) InstructionD4() {
+}
 
 func (c *CPU) InstructionD5() {
 	msb := c.Registers.GetD()
 	lsb := c.Registers.GetE()
 	addr := c.Registers.GetSP()
-	c.WriteMemory(addr-1, msb)
-	c.WriteMemory(addr-2, lsb)
+	c.Memory.Write(addr-1, msb)
+	c.Memory.Write(addr-2, lsb)
 	c.Registers.SetSP(addr - 2)
 }
 
 func (c *CPU) InstructionD6() {
 	value1 := c.Registers.GetA()
-	value2 := c.ReadPC()
+	value2 := c.read8BitOperand()
 	c.Flags.SetZ(value1-value2 == 0)
 	c.Flags.SetN(true)
 	c.Flags.SetH((value1 & 0xF) < (value2 & 0xF))
@@ -1827,24 +1869,31 @@ func (c *CPU) InstructionD6() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionD7() {}
+func (c *CPU) InstructionD7() {
+}
 
-func (c *CPU) InstructionD8() {}
+func (c *CPU) InstructionD8() {
+}
 
-func (c *CPU) InstructionD9() {}
+func (c *CPU) InstructionD9() {
+}
 
-func (c *CPU) InstructionDA() {}
+func (c *CPU) InstructionDA() {
+}
 
-func (c *CPU) InstructionDB() {}
+func (c *CPU) InstructionDB() {
+}
 
-func (c *CPU) InstructionDC() {}
+func (c *CPU) InstructionDC() {
+}
 
-func (c *CPU) InstructionDD() {}
+func (c *CPU) InstructionDD() {
+}
 
 func (c *CPU) InstructionDE() {
 	carry := c.Flags.GetCarryAsValue()
 	value1 := c.Registers.GetA()
-	value2 := c.ReadPC()
+	value2 := c.read8BitOperand()
 	c.Flags.SetZ(value1-value2-carry == 0)
 	c.Flags.SetN(true)
 	c.Flags.SetH((value1 & 0xF) < ((value2 & 0xF) + carry))
@@ -1853,20 +1902,21 @@ func (c *CPU) InstructionDE() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionDF() {}
+func (c *CPU) InstructionDF() {
+}
 
 func (c *CPU) InstructionE0() {
 	value := c.Registers.GetA()
 	msb := uint16(0xFF)
-	lsb := uint16(c.ReadPC())
+	lsb := uint16(c.read8BitOperand())
 	addr := msb<<8 | lsb
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
 func (c *CPU) InstructionE1() {
 	addr := c.Registers.GetSP()
-	msb := uint16(c.ReadMemory(addr + 1))
-	lsb := uint16(c.ReadMemory(addr))
+	msb := uint16(c.Memory.Read(addr + 1))
+	lsb := uint16(c.Memory.Read(addr))
 	value := msb<<8 | lsb
 	c.Registers.SetHL(value)
 	c.Registers.SetSP(addr + 2)
@@ -1877,25 +1927,27 @@ func (c *CPU) InstructionE2() {
 	msb := uint16(0xFF)
 	lsb := uint16(c.Registers.GetC())
 	addr := msb<<8 | lsb
-	c.WriteMemory(addr, value)
+	c.Memory.Write(addr, value)
 }
 
-func (c *CPU) InstructionE3() {}
+func (c *CPU) InstructionE3() {
+}
 
-func (c *CPU) InstructionE4() {}
+func (c *CPU) InstructionE4() {
+}
 
 func (c *CPU) InstructionE5() {
 	msb := c.Registers.GetH()
 	lsb := c.Registers.GetL()
 	addr := c.Registers.GetSP()
-	c.WriteMemory(addr-1, msb)
-	c.WriteMemory(addr-2, lsb)
+	c.Memory.Write(addr-1, msb)
+	c.Memory.Write(addr-2, lsb)
 	c.Registers.SetSP(addr - 2)
 }
 
 func (c *CPU) InstructionE6() {
 	value1 := c.Registers.GetA()
-	value2 := c.ReadPC()
+	value2 := c.read8BitOperand()
 	c.Flags.SetZ(value1&value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(true)
@@ -1904,12 +1956,13 @@ func (c *CPU) InstructionE6() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionE7() {}
+func (c *CPU) InstructionE7() {
+}
 
 //	WARNING: POTENTIALLY BROKEN HALF-CARRY EVALUATION!
 func (c *CPU) InstructionE8() {
 	value1 := int(c.Registers.GetSP())
-	value2 := int(c.ReadPC())
+	value2 := int(c.read8BitOperand())
 	value2 = (value2 & 127) - (value2 & 128)
 	c.Flags.SetZ(false)
 	c.Flags.SetN(false)
@@ -1922,28 +1975,29 @@ func (c *CPU) InstructionE8() {
 	}
 	c.Registers.SetSP(uint16(value1 + value2))
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
-
 }
 
-func (c *CPU) InstructionE9() {}
+func (c *CPU) InstructionE9() {
+}
 
 func (c *CPU) InstructionEA() {
 	value := c.Registers.GetA()
-	msb := uint16(c.ReadPC())
-	lsb := uint16(c.ReadPC())
-	addr := msb<<8 | lsb
-	c.WriteMemory(addr, value)
+	addr := c.read16BitOperand()
+	c.Memory.Write(addr, value)
 }
 
-func (c *CPU) InstructionEB() {}
+func (c *CPU) InstructionEB() {
+}
 
-func (c *CPU) InstructionEC() {}
+func (c *CPU) InstructionEC() {
+}
 
-func (c *CPU) InstructionED() {}
+func (c *CPU) InstructionED() {
+}
 
 func (c *CPU) InstructionEE() {
 	value1 := c.Registers.GetA()
-	value2 := c.ReadPC()
+	value2 := c.read8BitOperand()
 	c.Flags.SetZ(value1^value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
@@ -1952,20 +2006,21 @@ func (c *CPU) InstructionEE() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionEF() {}
+func (c *CPU) InstructionEF() {
+}
 
 func (c *CPU) InstructionF0() {
 	msb := uint16(0xFF)
-	lsb := uint16(c.ReadPC())
+	lsb := uint16(c.read8BitOperand())
 	addr := msb<<8 | lsb
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetA(value)
 }
 
 func (c *CPU) InstructionF1() {
 	addr := c.Registers.GetSP()
-	msb := uint16(c.ReadMemory(addr + 1))
-	lsb := uint16(c.ReadMemory(addr))
+	msb := uint16(c.Memory.Read(addr + 1))
+	lsb := uint16(c.Memory.Read(addr))
 	value := msb<<8 | lsb
 	c.Registers.SetAF(value)
 	c.Registers.SetSP(addr + 2)
@@ -1976,26 +2031,28 @@ func (c *CPU) InstructionF2() {
 	msb := uint16(0xFF)
 	lsb := uint16(c.Registers.GetC())
 	addr := msb<<8 | lsb
-	value := c.ReadMemory(addr)
+	value := c.Memory.Read(addr)
 	c.Registers.SetA(value)
 }
 
-func (c *CPU) InstructionF3() {}
+func (c *CPU) InstructionF3() {
+}
 
-func (c *CPU) InstructionF4() {}
+func (c *CPU) InstructionF4() {
+}
 
 func (c *CPU) InstructionF5() {
 	msb := c.Registers.GetA()
 	lsb := c.Registers.GetF()
 	addr := c.Registers.GetSP()
-	c.WriteMemory(addr-1, msb)
-	c.WriteMemory(addr-2, lsb)
+	c.Memory.Write(addr-1, msb)
+	c.Memory.Write(addr-2, lsb)
 	c.Registers.SetSP(addr - 2)
 }
 
 func (c *CPU) InstructionF6() {
 	value1 := c.Registers.GetA()
-	value2 := c.ReadPC()
+	value2 := c.read8BitOperand()
 	c.Flags.SetZ(value1|value2 == 0)
 	c.Flags.SetN(false)
 	c.Flags.SetH(false)
@@ -2004,13 +2061,12 @@ func (c *CPU) InstructionF6() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionF7() {}
+func (c *CPU) InstructionF7() {
+}
 
-//	WARNING: POTENTIALLY BROKEN HALF-CARRY EVALUATION!
 func (c *CPU) InstructionF8() {
 	value1 := int(c.Registers.GetSP())
-	value2 := int(c.ReadPC())
-	value2 = (value2 & 127) - (value2 & 128)
+	value2 := int(int8(c.read8BitOperand()))
 	c.Flags.SetZ(false)
 	c.Flags.SetN(false)
 	if value2 < 0 {
@@ -2030,22 +2086,23 @@ func (c *CPU) InstructionF9() {
 }
 
 func (c *CPU) InstructionFA() {
-	msb := uint16(c.ReadPC())
-	lsb := uint16(c.ReadPC())
-	addr := msb<<8 | lsb
-	value := c.ReadMemory(addr)
+	addr := c.read16BitOperand()
+	value := c.Memory.Read(addr)
 	c.Registers.SetA(value)
 }
 
-func (c *CPU) InstructionFB() {}
+func (c *CPU) InstructionFB() {
+}
 
-func (c *CPU) InstructionFC() {}
+func (c *CPU) InstructionFC() {
+}
 
-func (c *CPU) InstructionFD() {}
+func (c *CPU) InstructionFD() {
+}
 
 func (c *CPU) InstructionFE() {
 	value1 := c.Registers.GetA()
-	value2 := c.ReadPC()
+	value2 := c.read8BitOperand()
 	c.Flags.SetZ(value1 == value2)
 	c.Flags.SetN(true)
 	c.Flags.SetH((value1 & 0xF) < (value2 & 0xF))
@@ -2053,4 +2110,5 @@ func (c *CPU) InstructionFE() {
 	c.Registers.SetF(c.Flags.GetFlagsAsValue() | (c.Registers.GetF() & 0xF))
 }
 
-func (c *CPU) InstructionFF() {}
+func (c *CPU) InstructionFF() {
+}

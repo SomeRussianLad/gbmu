@@ -20,7 +20,7 @@ func NewGameboy() Gameboy {
 	c := cpu.NewCPU()
 	d := display.NewDisplay()
 	j := joypad.NewJoypad()
-	m := memory.NewMemory()
+	m := memory.NewDMGMemory()
 	s := sound.NewSound()
 
 	c.SetDisplay(d)

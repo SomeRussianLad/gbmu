@@ -49,16 +49,20 @@ func (c *CPU) SetSound(s sound.Sound) {
 	c.Sound = s
 }
 
-func (c *CPU) ReadPC() uint8 {
+func (c *CPU) readPC() uint8 {
 	addr := c.Registers.GetPC()
 	c.Registers.IncPC()
-	return c.ReadMemory(addr)
+	return c.Memory.Read(addr)
 }
 
-func (c *CPU) ReadMemory(addr uint16) uint8 {
-	return c.Memory.ReadMemory(addr)
+func (c *CPU) read8BitOperand() uint8 {
+	value := c.readPC()
+	return value
 }
 
-func (c *CPU) WriteMemory(addr uint16, value uint8) {
-	c.Memory.WriteMemory(addr, value)
+func (c *CPU) read16BitOperand() uint16 {
+	msb := uint16(c.readPC())
+	lsb := uint16(c.readPC())
+	value := msb<<8 | lsb
+	return value
 }
