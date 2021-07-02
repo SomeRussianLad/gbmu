@@ -75,6 +75,10 @@ func RandRegisters(c *cpu.CPU) {
 	c.Flags.SetFlagsFromValue(c.Registers.GetF())
 }
 
+func RandNibble(min, max int) uint8 {
+	return uint8(min + rand.Intn(max-min))
+}
+
 func Read8BitOperand(c *cpu.CPU) uint8 {
 	addr := c.Registers.GetPC()
 	value := c.Memory.Read(addr)

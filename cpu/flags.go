@@ -35,21 +35,21 @@ func (f *Flags) GetCarryAsValue() uint8 {
 	return 0
 }
 
-// func (c *CPU) GetZ() bool {
-// 	return c.Registers.GetF()%128 == 128
-// }
+func (f *Flags) GetZ() bool {
+	return f.Z
+}
 
-// func (c *CPU) GetN() bool {
-// 	return c.Registers.GetF()%64 == 64
-// }
+func (f *Flags) GetN() bool {
+	return f.N
+}
 
-// func (c *CPU) GetH() bool {
-// 	return c.Registers.GetF()%32 == 32
-// }
+func (f *Flags) GetH() bool {
+	return f.H
+}
 
-// func (c *CPU) GetC() bool {
-// 	return c.Registers.GetF()%16 == 16
-// }
+func (f *Flags) GetC() bool {
+	return f.C
+}
 
 func (f *Flags) SetZ(v bool) {
 	f.Z = v
