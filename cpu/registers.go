@@ -22,7 +22,8 @@ func (r *Registers) GetA() uint8 {
 }
 
 func (r *Registers) GetF() uint8 {
-	return r.F
+	// return r.F
+	return r.F & 0xF0
 }
 
 func (r *Registers) GetB() uint8 {
@@ -59,7 +60,8 @@ func (r *Registers) GetP() uint8 {
 
 func (r *Registers) GetAF() uint16 {
 	msb := uint16(r.GetA())
-	lsb := uint16(r.GetF())
+	// lsb := uint16(r.GetF())
+	lsb := uint16(r.GetF() & 0xF0)
 	value := msb<<8 | lsb
 	return value
 }
@@ -98,7 +100,8 @@ func (r *Registers) SetA(v uint8) {
 }
 
 func (r *Registers) SetF(v uint8) {
-	r.F = v
+	// r.F = v
+	r.F = v & 0xF0
 }
 
 func (r *Registers) SetB(v uint8) {
@@ -129,7 +132,8 @@ func (r *Registers) SetAF(v uint16) {
 	msb := uint8(v >> 8)
 	lsb := uint8(v & 0xFF)
 	r.SetA(msb)
-	r.SetF(lsb)
+	// r.SetF(lsb)
+	r.SetF(lsb & 0xF0)
 }
 
 func (r *Registers) SetBC(v uint16) {

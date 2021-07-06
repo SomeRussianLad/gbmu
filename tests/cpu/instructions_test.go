@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"goboy/cpu"
 	"goboy/tests"
+	"regexp"
 	"testing"
 )
 
@@ -11,31 +12,59 @@ import (
 
 //	Checks for proper increments of PC after execution
 //	TODO: Добавить IncPC() для всех префиксных инструкций
-// func TestPC(t *testing.T) {
-// 	c := tests.InitCPU()
-// 	instructions := cpu.NewInstructions()
-// 	reSkip, _ := regexp.Compile(`JP|JR|CALL|RET`)
-// 	// rePrefix, _ := regexp.Compile(`RLC|RRC|RL}`)
-// 	for _, instruction := range instructions {
-// 		if reSkip.Match([]byte(instruction.Mnemonic)) {
-// 			continue
-// 		}
-// 		tests.RandRegisters(&c)
-// 		testName := fmt.Sprintf("Executes %s", instruction.Mnemonic)
-// 		t.Run(testName, func(t *testing.T) {
-// 			pc0 := c.Registers.GetPC()
+func TestPC(t *testing.T) {
+	c := tests.InitCPU()
+	instructions := cpu.NewInstructions()
+	reSkip, _ := regexp.Compile(`JP|JR|CALL|RET|RST`)
+	for code, instruction := range instructions {
+		//	Any instruction that jumps must be skipped as current test has nothing to do with them
+		if reSkip.Match([]byte(instruction.Mnemonic)) {
+			continue
+		}
+		tests.RandRegisters(&c)
+		testName := fmt.Sprintf("Executes %s", instruction.Mnemonic)
+		t.Run(testName, func(t *testing.T) {
+			pc0 := c.Registers.GetPC()
 
-// 			//	Fake instruction read which is supposed to auto-increment PC
-// 			c.Registers.IncPC()
+			//	Fake instruction read which is supposed to auto-increment PC
+			c.Registers.IncPC()
 
-// 			instruction.Exec(&c)
-// 			pc1 := c.Registers.GetPC()
-// 			tests.Equals(t, int(pc1-pc0), instruction.Length, "PC incremented incorrectly. Expected %v, got %v")
-// 		})
-// 	}
-// }
+			//	STOP and PREFIX instructions are 2 bytes long and require additional PC increment
+			if code == 0x10 || code > 0xFF {
+				c.Registers.IncPC()
+			}
 
-//	Checks for conformity between Flags and Registers structs (Flags == Registers.F)
+			instruction.Exec(&c)
+			pc1 := c.Registers.GetPC()
+			tests.Equals(t, int(pc1-pc0), instruction.Length, "PC incremented incorrectly. Expected %v steps, got %v")
+		})
+	}
+}
+
+//	F == F & 0xF0
+func TestFRegisterClearsLowerBits(t *testing.T) {
+	c := tests.InitCPU()
+	instructions := cpu.NewInstructions()
+	for _, instruction := range instructions {
+		tests.RandRegisters(&c)
+		testName := fmt.Sprintf("Executes %s", instruction.Mnemonic)
+		t.Run(testName, func(t *testing.T) {
+			value := c.Registers.GetF()
+			tests.Equals(t, false, (value&8) == 8, "Lower bits are not cleared. RegF[3]: Expected %t, got %t")
+			tests.Equals(t, false, (value&4) == 4, "Lower bits are not cleared. RegF[2]: Expected %t, got %t")
+			tests.Equals(t, false, (value&2) == 2, "Lower bits are not cleared. RegF[1]: Expected %t, got %t")
+			tests.Equals(t, false, (value&1) == 1, "Lower bits are not cleared. RegF[0]: Expected %t, got %t")
+			instruction.Exec(&c)
+			value = c.Registers.GetF()
+			tests.Equals(t, false, (value&8) == 8, "Lower bits are not cleared. RegF[3]: Expected %t, got %t")
+			tests.Equals(t, false, (value&4) == 4, "Lower bits are not cleared. RegF[2]: Expected %t, got %t")
+			tests.Equals(t, false, (value&2) == 2, "Lower bits are not cleared. RegF[1]: Expected %t, got %t")
+			tests.Equals(t, false, (value&1) == 1, "Lower bits are not cleared. RegF[0]: Expected %t, got %t")
+		})
+	}
+}
+
+//	Flags == RegF
 func TestFlagsConformity(t *testing.T) {
 	c := tests.InitCPU()
 	instructions := cpu.NewInstructions()
@@ -688,7 +717,7 @@ func TestPUSHInstructions(t *testing.T) {
 }
 
 //	POP rr
-func TestPOPInstructions(t *testing.T) {
+func TestPOPInstructions1(t *testing.T) {
 	c := tests.InitCPU()
 	instructions := []struct {
 		Instruction cpu.Instruction
@@ -697,7 +726,6 @@ func TestPOPInstructions(t *testing.T) {
 		{c.Instructions[0xC1], c.Registers.GetC, c.Registers.GetB},
 		{c.Instructions[0xD1], c.Registers.GetE, c.Registers.GetD},
 		{c.Instructions[0xE1], c.Registers.GetL, c.Registers.GetH},
-		{c.Instructions[0xF1], c.Registers.GetF, c.Registers.GetA},
 	}
 	for _, testCase := range instructions {
 		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
@@ -712,6 +740,34 @@ func TestPOPInstructions(t *testing.T) {
 			prevAddr := addr
 			currAddr := c.Registers.GetSP()
 			tests.Equals(t, value1, value3, "Expected 0x%02X, got 0x%02X")
+			tests.Equals(t, value2, value4, "Expected 0x%02X, got 0x%02X")
+			tests.Equals(t, prevAddr+2, currAddr, "Expected 0x%04X, got 0x%04X")
+		})
+	}
+}
+
+//	POP AF
+func TestPOPInstructions2(t *testing.T) {
+	c := tests.InitCPU()
+	instructions := []struct {
+		Instruction cpu.Instruction
+		To1, To2    func() uint8
+	}{
+		{c.Instructions[0xF1], c.Registers.GetF, c.Registers.GetA},
+	}
+	for _, testCase := range instructions {
+		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+		t.Run(testName, func(t *testing.T) {
+			tests.RandRegisters(&c)
+			addr := c.Registers.GetSP()
+			testCase.Instruction.Exec(&c)
+			value1 := c.Memory.Read(addr)
+			value2 := c.Memory.Read(addr + 1)
+			value3 := testCase.To1()
+			value4 := testCase.To2()
+			prevAddr := addr
+			currAddr := c.Registers.GetSP()
+			tests.Equals(t, value1&0xF0, value3, "Expected 0x%02X, got 0x%02X")
 			tests.Equals(t, value2, value4, "Expected 0x%02X, got 0x%02X")
 			tests.Equals(t, prevAddr+2, currAddr, "Expected 0x%04X, got 0x%04X")
 		})
