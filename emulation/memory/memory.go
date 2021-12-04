@@ -15,6 +15,8 @@ package memory
 // FFFF        Interrupt Enable Register
 
 type Memory interface {
-	Read(addr uint16) uint8
-	Write(addr uint16, value uint8)
+	Read(uint16) uint8
+	Write(uint16, uint8)
+	RegisterGetter(uint16, func() uint8)
+	RegisterSetter(uint16, func(uint8))
 }

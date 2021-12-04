@@ -1,653 +1,806 @@
-package cpu_test
+package cpu
 
 import (
 	"fmt"
-	"goboy/cpu"
-	"goboy/tests"
+	"log"
+	"math/rand"
 	"regexp"
 	"testing"
+
+	"gbmu/emulation/controllers"
+	"gbmu/emulation/memory"
 )
 
-//	MAJOR TODO: Найти тесты формата черного ящика. Одного алгоритма и рандомных значений не хватит
-
-//	Checks for proper increments of PC after execution
-//	TODO: Добавить IncPC() для всех префиксных инструкций
+// Checks for proper amount of PC increments after execution
 func TestPC(t *testing.T) {
-	c := tests.InitCPU()
-	instructions := cpu.NewInstructions()
+	memory := memory.NewDMGMemory()
+	interrupts := controllers.NewInterrupts(memory)
+	cpu := NewCPU(memory, interrupts, nil, nil, nil)
+
 	reSkip, _ := regexp.Compile(`JP|JR|CALL|RET|RST`)
-	for code, instruction := range instructions {
-		//	Any instruction that jumps must be skipped as current test has nothing to do with them
-		if reSkip.Match([]byte(instruction.Mnemonic)) {
+
+	for o, i := range cpu.instructions {
+		// Any instructions that JUMP must be skipped as they overwrite PC
+		// completely and are not relevant in this test
+		if reSkip.Match([]byte(i.mnemonic)) {
 			continue
 		}
-		tests.RandRegisters(&c)
-		testName := fmt.Sprintf("Executes %s", instruction.Mnemonic)
+
+		testName := fmt.Sprintf("Executes %s", i.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			pc0 := c.Registers.GetPC()
+			randomizeRegisters(cpu.registers)
 
-			//	Fake instruction read which is supposed to auto-increment PC
-			c.Registers.IncPC()
+			pc0 := cpu.registers.getPC()
 
-			//	STOP and PREFIX instructions are 2 bytes long and require additional PC increment
-			if code == 0x10 || code > 0xFF {
-				c.Registers.IncPC()
+			// Fake instruction read, that auto-increments PC
+			cpu.registers.incPC()
+
+			// Because PREFIX instructions are 2 bytes long, it is
+			// required to increment PC one more time
+			if o > 0xFF {
+				cpu.registers.incPC()
 			}
 
-			instruction.Exec(&c)
-			pc1 := c.Registers.GetPC()
-			tests.Equals(t, int(pc1-pc0), instruction.Length, "PC incremented incorrectly. Expected %v steps, got %v")
+			i.exec(cpu)
+			pc1 := cpu.registers.getPC()
+
+			if int(pc1-pc0) != i.length {
+				t.Errorf("PC incremented incorrectly. Expected %v steps, got %v", int(pc1-pc0), i.length)
+			}
 		})
 	}
 }
 
-//	F == F & 0xF0
-func TestFRegisterClearsLowerBits(t *testing.T) {
-	c := tests.InitCPU()
-	instructions := cpu.NewInstructions()
-	for _, instruction := range instructions {
-		tests.RandRegisters(&c)
-		testName := fmt.Sprintf("Executes %s", instruction.Mnemonic)
-		t.Run(testName, func(t *testing.T) {
-			value := c.Registers.GetF()
-			tests.Equals(t, false, (value&8) == 8, "Lower bits are not cleared. RegF[3]: Expected %t, got %t")
-			tests.Equals(t, false, (value&4) == 4, "Lower bits are not cleared. RegF[2]: Expected %t, got %t")
-			tests.Equals(t, false, (value&2) == 2, "Lower bits are not cleared. RegF[1]: Expected %t, got %t")
-			tests.Equals(t, false, (value&1) == 1, "Lower bits are not cleared. RegF[0]: Expected %t, got %t")
-			instruction.Exec(&c)
-			value = c.Registers.GetF()
-			tests.Equals(t, false, (value&8) == 8, "Lower bits are not cleared. RegF[3]: Expected %t, got %t")
-			tests.Equals(t, false, (value&4) == 4, "Lower bits are not cleared. RegF[2]: Expected %t, got %t")
-			tests.Equals(t, false, (value&2) == 2, "Lower bits are not cleared. RegF[1]: Expected %t, got %t")
-			tests.Equals(t, false, (value&1) == 1, "Lower bits are not cleared. RegF[0]: Expected %t, got %t")
-		})
-	}
-}
-
-//	Flags == RegF
 func TestFlagsConformity(t *testing.T) {
-	c := tests.InitCPU()
-	instructions := cpu.NewInstructions()
-	for _, instruction := range instructions {
-		tests.RandRegisters(&c)
-		testName := fmt.Sprintf("Executes %s", instruction.Mnemonic)
+	memory := memory.NewDMGMemory()
+	interrupts := controllers.NewInterrupts(memory)
+	cpu := NewCPU(memory, interrupts, nil, nil, nil)
+
+	randomizeMemory(memory)
+
+	for _, i := range cpu.instructions {
+		testName := fmt.Sprintf("Executes %s", i.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			instruction.Exec(&c)
-			value := c.Registers.GetF()
-			tests.Equals(t, c.Flags.Z, (value&128) == 128, "Conformity broken. Flag Z: %t, RegF[7]: %t")
-			tests.Equals(t, c.Flags.N, (value&64) == 64, "Conformity broken. Flag N: %t, RegF[6]: %t")
-			tests.Equals(t, c.Flags.H, (value&32) == 32, "Conformity broken. Flag H: %t, RegF[5]: %t")
-			tests.Equals(t, c.Flags.C, (value&16) == 16, "Conformity broken. Flag C: %t, RegF[4]: %t")
+			randomizeRegisters(cpu.registers)
+			i.exec(cpu)
+			value := cpu.registers.getF()
+
+			if cpu.registers.f.getZ() != ((value & 128) == 128) {
+				t.Errorf("Conformity broken. Flag Z: %t, RegF[7]: %t", cpu.registers.f.getZ(), (value&128) == 128)
+			}
+			if cpu.registers.f.getN() != ((value & 64) == 64) {
+				t.Errorf("Conformity broken. Flag N: %t, RegF[6]: %t", cpu.registers.f.getN(), (value&64) == 64)
+			}
+			if cpu.registers.f.getH() != ((value & 32) == 32) {
+				t.Errorf("Conformity broken. Flag H: %t, RegF[5]: %t", cpu.registers.f.getH(), (value&32) == 32)
+			}
+			if cpu.registers.f.getC() != ((value & 16) == 16) {
+				t.Errorf("Conformity broken. Flag C: %t, RegF[4]: %t", cpu.registers.f.getC(), (value&16) == 16)
+			}
 		})
 	}
 }
 
-//	LD r,r
+// LD r,r
 func TestLDInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0x40], c.Registers.GetB, c.Registers.GetB},
-		{c.Instructions[0x41], c.Registers.GetB, c.Registers.GetC},
-		{c.Instructions[0x42], c.Registers.GetB, c.Registers.GetD},
-		{c.Instructions[0x43], c.Registers.GetB, c.Registers.GetE},
-		{c.Instructions[0x44], c.Registers.GetB, c.Registers.GetH},
-		{c.Instructions[0x45], c.Registers.GetB, c.Registers.GetL},
-		{c.Instructions[0x47], c.Registers.GetB, c.Registers.GetA},
-		{c.Instructions[0x48], c.Registers.GetC, c.Registers.GetB},
-		{c.Instructions[0x49], c.Registers.GetC, c.Registers.GetC},
-		{c.Instructions[0x4A], c.Registers.GetC, c.Registers.GetD},
-		{c.Instructions[0x4B], c.Registers.GetC, c.Registers.GetE},
-		{c.Instructions[0x4C], c.Registers.GetC, c.Registers.GetH},
-		{c.Instructions[0x4D], c.Registers.GetC, c.Registers.GetL},
-		{c.Instructions[0x4F], c.Registers.GetC, c.Registers.GetA},
-		{c.Instructions[0x50], c.Registers.GetD, c.Registers.GetB},
-		{c.Instructions[0x51], c.Registers.GetD, c.Registers.GetC},
-		{c.Instructions[0x52], c.Registers.GetD, c.Registers.GetD},
-		{c.Instructions[0x53], c.Registers.GetD, c.Registers.GetE},
-		{c.Instructions[0x54], c.Registers.GetD, c.Registers.GetH},
-		{c.Instructions[0x55], c.Registers.GetD, c.Registers.GetL},
-		{c.Instructions[0x57], c.Registers.GetD, c.Registers.GetA},
-		{c.Instructions[0x58], c.Registers.GetE, c.Registers.GetB},
-		{c.Instructions[0x59], c.Registers.GetE, c.Registers.GetC},
-		{c.Instructions[0x5A], c.Registers.GetE, c.Registers.GetD},
-		{c.Instructions[0x5B], c.Registers.GetE, c.Registers.GetE},
-		{c.Instructions[0x5C], c.Registers.GetE, c.Registers.GetH},
-		{c.Instructions[0x5D], c.Registers.GetE, c.Registers.GetL},
-		{c.Instructions[0x5F], c.Registers.GetE, c.Registers.GetA},
-		{c.Instructions[0x60], c.Registers.GetH, c.Registers.GetB},
-		{c.Instructions[0x61], c.Registers.GetH, c.Registers.GetC},
-		{c.Instructions[0x62], c.Registers.GetH, c.Registers.GetD},
-		{c.Instructions[0x63], c.Registers.GetH, c.Registers.GetE},
-		{c.Instructions[0x64], c.Registers.GetH, c.Registers.GetH},
-		{c.Instructions[0x65], c.Registers.GetH, c.Registers.GetL},
-		{c.Instructions[0x67], c.Registers.GetH, c.Registers.GetA},
-		{c.Instructions[0x68], c.Registers.GetL, c.Registers.GetB},
-		{c.Instructions[0x69], c.Registers.GetL, c.Registers.GetC},
-		{c.Instructions[0x6A], c.Registers.GetL, c.Registers.GetD},
-		{c.Instructions[0x6B], c.Registers.GetL, c.Registers.GetE},
-		{c.Instructions[0x6C], c.Registers.GetL, c.Registers.GetH},
-		{c.Instructions[0x6D], c.Registers.GetL, c.Registers.GetL},
-		{c.Instructions[0x6F], c.Registers.GetL, c.Registers.GetA},
-		{c.Instructions[0x78], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0x79], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0x7A], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0x7B], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0x7C], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0x7D], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0x7F], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0x40], cpu.registers.getB, cpu.registers.getB},
+		{cpu.instructions[0x41], cpu.registers.getB, cpu.registers.getC},
+		{cpu.instructions[0x42], cpu.registers.getB, cpu.registers.getD},
+		{cpu.instructions[0x43], cpu.registers.getB, cpu.registers.getE},
+		{cpu.instructions[0x44], cpu.registers.getB, cpu.registers.getH},
+		{cpu.instructions[0x45], cpu.registers.getB, cpu.registers.getL},
+		{cpu.instructions[0x47], cpu.registers.getB, cpu.registers.getA},
+		{cpu.instructions[0x48], cpu.registers.getC, cpu.registers.getB},
+		{cpu.instructions[0x49], cpu.registers.getC, cpu.registers.getC},
+		{cpu.instructions[0x4A], cpu.registers.getC, cpu.registers.getD},
+		{cpu.instructions[0x4B], cpu.registers.getC, cpu.registers.getE},
+		{cpu.instructions[0x4C], cpu.registers.getC, cpu.registers.getH},
+		{cpu.instructions[0x4D], cpu.registers.getC, cpu.registers.getL},
+		{cpu.instructions[0x4F], cpu.registers.getC, cpu.registers.getA},
+		{cpu.instructions[0x50], cpu.registers.getD, cpu.registers.getB},
+		{cpu.instructions[0x51], cpu.registers.getD, cpu.registers.getC},
+		{cpu.instructions[0x52], cpu.registers.getD, cpu.registers.getD},
+		{cpu.instructions[0x53], cpu.registers.getD, cpu.registers.getE},
+		{cpu.instructions[0x54], cpu.registers.getD, cpu.registers.getH},
+		{cpu.instructions[0x55], cpu.registers.getD, cpu.registers.getL},
+		{cpu.instructions[0x57], cpu.registers.getD, cpu.registers.getA},
+		{cpu.instructions[0x58], cpu.registers.getE, cpu.registers.getB},
+		{cpu.instructions[0x59], cpu.registers.getE, cpu.registers.getC},
+		{cpu.instructions[0x5A], cpu.registers.getE, cpu.registers.getD},
+		{cpu.instructions[0x5B], cpu.registers.getE, cpu.registers.getE},
+		{cpu.instructions[0x5C], cpu.registers.getE, cpu.registers.getH},
+		{cpu.instructions[0x5D], cpu.registers.getE, cpu.registers.getL},
+		{cpu.instructions[0x5F], cpu.registers.getE, cpu.registers.getA},
+		{cpu.instructions[0x60], cpu.registers.getH, cpu.registers.getB},
+		{cpu.instructions[0x61], cpu.registers.getH, cpu.registers.getC},
+		{cpu.instructions[0x62], cpu.registers.getH, cpu.registers.getD},
+		{cpu.instructions[0x63], cpu.registers.getH, cpu.registers.getE},
+		{cpu.instructions[0x64], cpu.registers.getH, cpu.registers.getH},
+		{cpu.instructions[0x65], cpu.registers.getH, cpu.registers.getL},
+		{cpu.instructions[0x67], cpu.registers.getH, cpu.registers.getA},
+		{cpu.instructions[0x68], cpu.registers.getL, cpu.registers.getB},
+		{cpu.instructions[0x69], cpu.registers.getL, cpu.registers.getC},
+		{cpu.instructions[0x6A], cpu.registers.getL, cpu.registers.getD},
+		{cpu.instructions[0x6B], cpu.registers.getL, cpu.registers.getE},
+		{cpu.instructions[0x6C], cpu.registers.getL, cpu.registers.getH},
+		{cpu.instructions[0x6D], cpu.registers.getL, cpu.registers.getL},
+		{cpu.instructions[0x6F], cpu.registers.getL, cpu.registers.getA},
+		{cpu.instructions[0x78], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0x79], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0x7A], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0x7B], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0x7C], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0x7D], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0x7F], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
-			value1 := testCase.From()
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
+			value1 := tc.from()
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD r,n
+// LD r,n
 func TestLDInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x06], c.Registers.GetB},
-		{c.Instructions[0x0E], c.Registers.GetC},
-		{c.Instructions[0x16], c.Registers.GetD},
-		{c.Instructions[0x1E], c.Registers.GetE},
-		{c.Instructions[0x26], c.Registers.GetH},
-		{c.Instructions[0x2E], c.Registers.GetL},
-		{c.Instructions[0x3E], c.Registers.GetA},
+		{cpu.instructions[0x06], cpu.registers.getB},
+		{cpu.instructions[0x0E], cpu.registers.getC},
+		{cpu.instructions[0x16], cpu.registers.getD},
+		{cpu.instructions[0x1E], cpu.registers.getE},
+		{cpu.instructions[0x26], cpu.registers.getH},
+		{cpu.instructions[0x2E], cpu.registers.getL},
+		{cpu.instructions[0x3E], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := tests.Read8BitOperand(&c)
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			value1 := read8BitOperand(cpu)
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD r,(HL)
+// LD r,(HL)
 func TestLDInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x46], c.Registers.GetB},
-		{c.Instructions[0x4E], c.Registers.GetC},
-		{c.Instructions[0x56], c.Registers.GetD},
-		{c.Instructions[0x5E], c.Registers.GetE},
-		{c.Instructions[0x66], c.Registers.GetH},
-		{c.Instructions[0x6E], c.Registers.GetL},
-		{c.Instructions[0x7E], c.Registers.GetA},
+		{cpu.instructions[0x46], cpu.registers.getB},
+		{cpu.instructions[0x4E], cpu.registers.getC},
+		{cpu.instructions[0x56], cpu.registers.getD},
+		{cpu.instructions[0x5E], cpu.registers.getE},
+		{cpu.instructions[0x66], cpu.registers.getH},
+		{cpu.instructions[0x6E], cpu.registers.getL},
+		{cpu.instructions[0x7E], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := c.Memory.Read(addr)
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := cpu.memory.Read(addr)
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD (HL),r
+// LD (HL),r
 func TestLDInstructions4(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0x70], c.Registers.GetB},
-		{c.Instructions[0x71], c.Registers.GetC},
-		{c.Instructions[0x72], c.Registers.GetD},
-		{c.Instructions[0x73], c.Registers.GetE},
-		{c.Instructions[0x74], c.Registers.GetH},
-		{c.Instructions[0x75], c.Registers.GetL},
-		{c.Instructions[0x77], c.Registers.GetA},
+		{cpu.instructions[0x70], cpu.registers.getB},
+		{cpu.instructions[0x71], cpu.registers.getC},
+		{cpu.instructions[0x72], cpu.registers.getD},
+		{cpu.instructions[0x73], cpu.registers.getE},
+		{cpu.instructions[0x74], cpu.registers.getH},
+		{cpu.instructions[0x75], cpu.registers.getL},
+		{cpu.instructions[0x77], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
-			addr := c.Registers.GetHL()
-			value1 := testCase.From()
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
+			addr := cpu.registers.getHL()
+			if addr == controllers.ADDR_DIV_COUNTER { // writing to 0xFF04 does nothing; skip
+				return
+			}
+			value1 := tc.from()
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD (HL),n
+// LD (HL),n
 func TestLDInstructions5(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x36]},
+		{cpu.instructions[0x36]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := tests.Read8BitOperand(&c)
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := read8BitOperand(cpu)
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD A,(BC)
+// LD A,(BC)
 func TestLDInstructions6(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x0A], c.Registers.GetA},
+		{cpu.instructions[0x0A], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
-			addr := c.Registers.GetBC()
-			value1 := c.Memory.Read(addr)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
+			addr := cpu.registers.getBC()
+			value1 := cpu.memory.Read(addr)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD A,(DE)
+// LD A,(DE)
 func TestLDInstructions7(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x1A], c.Registers.GetA},
+		{cpu.instructions[0x1A], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
-			addr := c.Registers.GetDE()
-			value1 := c.Memory.Read(addr)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
+			addr := cpu.registers.getDE()
+			value1 := cpu.memory.Read(addr)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD A,(nn)
+// LD A,(nn)
 func TestLDInstructions8(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xFA], c.Registers.GetA},
+		{cpu.instructions[0xFA], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := tests.Read16BitOperand(&c)
-			testCase.Instruction.Exec(&c)
-			value1 := c.Memory.Read(addr)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			addr := read16BitOperand(cpu)
+			tc.instruction.exec(cpu)
+			value1 := cpu.memory.Read(addr)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD (BC),A
+// LD (BC),A
 func TestLDInstructions9(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0x02], c.Registers.GetA},
+		{cpu.instructions[0x02], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
-			addr := c.Registers.GetBC()
-			value1 := testCase.From()
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
+			addr := cpu.registers.getBC()
+			value1 := tc.from()
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD (DE),A
+// LD (DE),A
 func TestLDInstructions10(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0x12], c.Registers.GetA},
+		{cpu.instructions[0x12], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
-			addr := c.Registers.GetDE()
-			value1 := testCase.From()
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
+			addr := cpu.registers.getDE()
+			value1 := tc.from()
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD (nn),A
+// LD (nn),A
 func TestLDInstructions11(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0xEA], c.Registers.GetA},
+		{cpu.instructions[0xEA], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := tests.Read16BitOperand(&c)
-			testCase.Instruction.Exec(&c)
-			value1 := testCase.From()
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			addr := read16BitOperand(cpu)
+			tc.instruction.exec(cpu)
+			value1 := tc.from()
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LDH A,(n)
+// LDH A,(n)
 func TestLDInstructions12(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xF0], c.Registers.GetA},
+		{cpu.instructions[0xF0], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			msb := uint16(0xFF)
-			lsb := uint16(tests.Read8BitOperand(&c))
+			lsb := uint16(read8BitOperand(cpu))
 			addr := msb<<8 | lsb
-			testCase.Instruction.Exec(&c)
-			value1 := c.Memory.Read(addr)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			tc.instruction.exec(cpu)
+			value1 := cpu.memory.Read(addr)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LDH (n),A
+// LDH (n),A
 func TestLDInstructions13(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0xE0], c.Registers.GetA},
+		{cpu.instructions[0xE0], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			msb := uint16(0xFF)
-			lsb := uint16(tests.Read8BitOperand(&c))
+			lsb := uint16(read8BitOperand(cpu))
 			addr := msb<<8 | lsb
-			testCase.Instruction.Exec(&c)
-			value1 := testCase.From()
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			for addr == controllers.ADDR_DIV_COUNTER { // writing to 0xFF04 does nothing; randomize once more
+				cpu.registers.setPC(uint16(rand.Int()))
+				lsb = uint16(read8BitOperand(cpu))
+				addr = msb<<8 | lsb
+			}
+			tc.instruction.exec(cpu)
+			value1 := tc.from()
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if value1 != value2 {
+				log.Printf("adr: 0x%04X\n", addr)
+			}
 		})
 	}
 }
 
-//	LD A,(C)
+// LD A,(C)
 func TestLDInstructions14(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0xF2], c.Registers.GetA, c.Registers.GetC},
+		{cpu.instructions[0xF2], cpu.registers.getA, cpu.registers.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
 			msb := uint16(0xFF)
-			lsb := uint16(testCase.From())
+			lsb := uint16(tc.from())
 			addr := msb<<8 | lsb
-			value1 := c.Memory.Read(addr)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			value1 := cpu.memory.Read(addr)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD (C),A
+// LD (C),A
 func TestLDInstructions15(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0xE2], c.Registers.GetC, c.Registers.GetA},
+		{cpu.instructions[0xE2], cpu.registers.getC, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
 			msb := uint16(0xFF)
-			lsb := uint16(testCase.To())
+			lsb := uint16(tc.to())
 			addr := msb<<8 | lsb
-			value1 := testCase.From()
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			if addr == controllers.ADDR_DIV_COUNTER { // writing to 0xFF04 does nothing; skip
+				return
+			}
+			value1 := tc.from()
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LDI (HL),A
+// LDI (HL),A
 func TestLDInstructions16(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0x22], c.Registers.GetA},
+		{cpu.instructions[0x22], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			testCase.Instruction.Exec(&c)
-			value1 := testCase.From()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			tc.instruction.exec(cpu)
+			value1 := tc.from()
+			value2 := cpu.memory.Read(addr)
 			prevAddr := addr
-			currAddr := c.Registers.GetHL()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, prevAddr+1, currAddr, "Expected 0x%04X, got 0x%04X")
+			currAddr := cpu.registers.getHL()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if prevAddr+1 != currAddr {
+				t.Errorf("Expected 0x%04X, got 0x%04X", prevAddr+1, currAddr)
+			}
 		})
 	}
 }
 
-//	LDI A,(HL)
+// LDI A,(HL)
 func TestLDInstructions17(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x2A], c.Registers.GetA},
+		{cpu.instructions[0x2A], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			testCase.Instruction.Exec(&c)
-			value1 := c.Memory.Read(addr)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			tc.instruction.exec(cpu)
+			value1 := cpu.memory.Read(addr)
+			value2 := tc.to()
 			prevAddr := addr
-			currAddr := c.Registers.GetHL()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, prevAddr+1, currAddr, "Expected 0x%04X, got 0x%04X")
+			currAddr := cpu.registers.getHL()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if prevAddr+1 != currAddr {
+				t.Errorf("Expected 0x%04X, got 0x%04X", prevAddr+1, currAddr)
+			}
 		})
 	}
 }
 
-//	LDD (HL),A
+// LDD (HL),A
 func TestLDInstructions18(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0x32], c.Registers.GetA},
+		{cpu.instructions[0x32], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			testCase.Instruction.Exec(&c)
-			value1 := testCase.From()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			if addr == controllers.ADDR_DIV_COUNTER { // writing to 0xFF04 does nothing; skip
+				return
+			}
+			tc.instruction.exec(cpu)
+			value1 := tc.from()
+			value2 := cpu.memory.Read(addr)
 			prevAddr := addr
-			currAddr := c.Registers.GetHL()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, prevAddr-1, currAddr, "Expected 0x%04X, got 0x%04X")
+			currAddr := cpu.registers.getHL()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if prevAddr-1 != currAddr {
+				t.Errorf("Expected 0x%04X, got 0x%04X", prevAddr-1, currAddr)
+			}
 		})
 	}
 }
 
-//	LDD A,(HL)
+// LDD A,(HL)
 func TestLDInstructions19(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x3A], c.Registers.GetA},
+		{cpu.instructions[0x3A], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			testCase.Instruction.Exec(&c)
-			value1 := c.Memory.Read(addr)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			tc.instruction.exec(cpu)
+			value1 := cpu.memory.Read(addr)
+			value2 := tc.to()
 			prevAddr := addr
-			currAddr := c.Registers.GetHL()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, prevAddr-1, currAddr, "Expected 0x%04X, got 0x%04X")
+			currAddr := cpu.registers.getHL()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if prevAddr-1 != currAddr {
+				t.Errorf("Expected 0x%04X, got 0x%04X", prevAddr-1, currAddr)
+			}
 		})
 	}
 }
 
-//	LD rr,nn
+// LD rr,nn
 func TestLDInstructions20(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint16
+		instruction instruction
+		to          func() uint16
 	}{
-		{c.Instructions[0x01], c.Registers.GetBC},
-		{c.Instructions[0x11], c.Registers.GetDE},
-		{c.Instructions[0x21], c.Registers.GetHL},
-		{c.Instructions[0x31], c.Registers.GetSP},
+		{cpu.instructions[0x01], cpu.registers.getBC},
+		{cpu.instructions[0x11], cpu.registers.getDE},
+		{cpu.instructions[0x21], cpu.registers.getHL},
+		{cpu.instructions[0x31], cpu.registers.getSP},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := tests.Read16BitOperand(&c)
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
+			randomizeRegisters(cpu.registers)
+			value1 := read16BitOperand(cpu)
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	LD (nn),SP
+// LD (nn),SP
 func TestLDInstructions21(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction  cpu.Instruction
-		From1, From2 func() uint8
+		instruction instruction
 	}{
-		{c.Instructions[0x08], c.Registers.GetP, c.Registers.GetS},
+		{cpu.instructions[0x08]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := tests.Read16BitOperand(&c)
-			testCase.Instruction.Exec(&c)
-			value1 := c.Memory.Read(addr)
-			value2 := c.Memory.Read(addr + 1)
-			tests.Equals(t, value1, testCase.From1(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, value2, testCase.From2(), "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			addr := read16BitOperand(cpu)
+			tc.instruction.exec(cpu)
+			value1 := cpu.memory.Read(addr)
+			value2 := cpu.memory.Read(addr + 1)
+			if value1 != uint8(cpu.registers.getSP()&0xFF) {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, uint8(cpu.registers.getSP()&0xFF))
+			}
+			if value2 != uint8(cpu.registers.getSP()>>8) {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, uint8(cpu.registers.getSP()>>8))
+			}
 		})
 	}
 }
 
-//	LDHL SP+e
+// LDHL SP+e
 func TestLDInstructions22(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint16
+		instruction instruction
+		to          func() uint16
 	}{
-		{c.Instructions[0xF8], c.Registers.GetHL},
+		{cpu.instructions[0xF8], cpu.registers.getHL},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			sp := int(c.Registers.GetSP())
-			e := int(int8(tests.Read8BitOperand(&c)))
-			testCase.Instruction.Exec(&c)
+			randomizeRegisters(cpu.registers)
+			sp := int(cpu.registers.getSP())
+			e := int(int8(read8BitOperand(cpu)))
+			tc.instruction.exec(cpu)
 			value1 := uint16(sp + e)
-			value2 := testCase.To()
+			value2 := tc.to()
 			flagH := false
 			flagC := false
 			if e < 0 {
@@ -657,1121 +810,1570 @@ func TestLDInstructions22(t *testing.T) {
 				flagH = (sp&0xF)+(e&0xF) > 0xF
 				flagC = (sp&0xFF)+(e&0xFF) > 0xFF
 			}
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, false, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
+			if false != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", false, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	LD SP,HL
+// LD SP,HL
 func TestLDInstructions23(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint16
+		instruction instruction
+		to, from    func() uint16
 	}{
-		{c.Instructions[0xF9], c.Registers.GetSP, c.Registers.GetHL},
+		{cpu.instructions[0xF9], cpu.registers.getSP, cpu.registers.getHL},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, testCase.From(), testCase.To(), "Expected 0x%04X, got 0x%04X")
+			randomizeRegisters(cpu.registers)
+			tc.instruction.exec(cpu)
+			if tc.from() != tc.to() {
+				t.Errorf("Expected 0x%04X, got 0x%04X", tc.from(), tc.to())
+			}
 		})
 	}
 }
 
-//	PUSH rr
+// PUSH rr
 func TestPUSHInstructions(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction  cpu.Instruction
+		instruction  instruction
 		From1, From2 func() uint8
 	}{
-		{c.Instructions[0xC5], c.Registers.GetB, c.Registers.GetC},
-		{c.Instructions[0xD5], c.Registers.GetD, c.Registers.GetE},
-		{c.Instructions[0xE5], c.Registers.GetH, c.Registers.GetL},
-		{c.Instructions[0xF5], c.Registers.GetA, c.Registers.GetF},
+		{cpu.instructions[0xC5], cpu.registers.getB, cpu.registers.getC},
+		{cpu.instructions[0xD5], cpu.registers.getD, cpu.registers.getE},
+		{cpu.instructions[0xE5], cpu.registers.getH, cpu.registers.getL},
+		{cpu.instructions[0xF5], cpu.registers.getA, cpu.registers.getF},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetSP()
-			testCase.Instruction.Exec(&c)
-			value1 := testCase.From1()
-			value2 := testCase.From2()
-			value3 := c.Memory.Read(addr - 1)
-			value4 := c.Memory.Read(addr - 2)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getSP()
+			if addr == controllers.ADDR_DIV_COUNTER+1 || addr == controllers.ADDR_DIV_COUNTER+2 { // writing to 0xFF04 does nothing; skip
+				return
+			}
+			tc.instruction.exec(cpu)
+			value1 := tc.From1()
+			value2 := tc.From2()
+			value3 := cpu.memory.Read(addr - 1)
+			value4 := cpu.memory.Read(addr - 2)
 			prevAddr := addr
-			currAddr := c.Registers.GetSP()
-			tests.Equals(t, value1, value3, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, value2, value4, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, prevAddr-2, currAddr, "Expected 0x%04X, got 0x%04X")
+			currAddr := cpu.registers.getSP()
+			if value1 != value3 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value3)
+			}
+			if value2 != value4 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, value4)
+			}
+			if prevAddr-2 != currAddr {
+				t.Errorf("Expected 0x%04X, got 0x%04X", prevAddr-2, currAddr)
+			}
 		})
 	}
 }
 
-//	POP rr
+// POP rr
 func TestPOPInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 		To1, To2    func() uint8
 	}{
-		{c.Instructions[0xC1], c.Registers.GetC, c.Registers.GetB},
-		{c.Instructions[0xD1], c.Registers.GetE, c.Registers.GetD},
-		{c.Instructions[0xE1], c.Registers.GetL, c.Registers.GetH},
+		{cpu.instructions[0xC1], cpu.registers.getC, cpu.registers.getB},
+		{cpu.instructions[0xD1], cpu.registers.getE, cpu.registers.getD},
+		{cpu.instructions[0xE1], cpu.registers.getL, cpu.registers.getH},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetSP()
-			testCase.Instruction.Exec(&c)
-			value1 := c.Memory.Read(addr)
-			value2 := c.Memory.Read(addr + 1)
-			value3 := testCase.To1()
-			value4 := testCase.To2()
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getSP()
+			tc.instruction.exec(cpu)
+			value1 := cpu.memory.Read(addr)
+			value2 := cpu.memory.Read(addr + 1)
+			value3 := tc.To1()
+			value4 := tc.To2()
 			prevAddr := addr
-			currAddr := c.Registers.GetSP()
-			tests.Equals(t, value1, value3, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, value2, value4, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, prevAddr+2, currAddr, "Expected 0x%04X, got 0x%04X")
+			currAddr := cpu.registers.getSP()
+			if value1 != value3 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value3)
+			}
+			if value2 != value4 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, value4)
+			}
+			if prevAddr+2 != currAddr {
+				t.Errorf("Expected 0x%04X, got 0x%04X", prevAddr+2, currAddr)
+			}
 		})
 	}
 }
 
-//	POP AF
+// POP AF
 func TestPOPInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 		To1, To2    func() uint8
 	}{
-		{c.Instructions[0xF1], c.Registers.GetF, c.Registers.GetA},
+		{cpu.instructions[0xF1], cpu.registers.getF, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetSP()
-			testCase.Instruction.Exec(&c)
-			value1 := c.Memory.Read(addr)
-			value2 := c.Memory.Read(addr + 1)
-			value3 := testCase.To1()
-			value4 := testCase.To2()
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getSP()
+			tc.instruction.exec(cpu)
+			value1 := cpu.memory.Read(addr)
+			value2 := cpu.memory.Read(addr + 1)
+			value3 := tc.To1()
+			value4 := tc.To2()
 			prevAddr := addr
-			currAddr := c.Registers.GetSP()
-			tests.Equals(t, value1&0xF0, value3, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, value2, value4, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, prevAddr+2, currAddr, "Expected 0x%04X, got 0x%04X")
+			currAddr := cpu.registers.getSP()
+			if value1&0xF0 != value3 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1&0xF0, value3)
+			}
+			if value2 != value4 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, value4)
+			}
+			if prevAddr+2 != currAddr {
+				t.Errorf("Expected 0x%04X, got 0x%04X", prevAddr+2, currAddr)
+			}
 		})
 	}
 }
 
-//	ADD A,r
+// ADD A,r
 func TestADDInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0x80], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0x81], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0x82], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0x83], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0x84], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0x85], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0x87], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0x80], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0x81], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0x82], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0x83], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0x84], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0x85], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0x87], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := tc.from()
 			flagZ := value1+value2 == 0
 			flagN := false
 			flagH := (value1&0xF)+(value2&0xF) > 0xF
 			flagC := uint16(value1)+uint16(value2) > 0xFF
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1+value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1+value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1+value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	ADD A,n
+// ADD A,n
 func TestADDInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xC6], c.Registers.GetA},
+		{cpu.instructions[0xC6], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := tests.Read8BitOperand(&c)
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := read8BitOperand(cpu)
 			flagZ := value1+value2 == 0
 			flagN := false
 			flagH := (value1&0xF)+(value2&0xF) > 0xF
 			flagC := uint16(value1)+uint16(value2) > 0xFF
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1+value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1+value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1+value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	ADD A,(HL)
+// ADD A,(HL)
 func TestADDInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x86], c.Registers.GetA},
+		{cpu.instructions[0x86], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := testCase.To()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := tc.to()
+			value2 := cpu.memory.Read(addr)
 			flagZ := value1+value2 == 0
 			flagN := false
 			flagH := (value1&0xF)+(value2&0xF) > 0xF
 			flagC := uint16(value1)+uint16(value2) > 0xFF
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1+value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1+value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1+value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	ADD HL,rr
+// ADD HL,rr
 func TestADDInstructions4(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint16
+		instruction instruction
+		to, from    func() uint16
 	}{
-		{c.Instructions[0x09], c.Registers.GetHL, c.Registers.GetBC},
-		{c.Instructions[0x19], c.Registers.GetHL, c.Registers.GetDE},
-		{c.Instructions[0x29], c.Registers.GetHL, c.Registers.GetHL},
-		{c.Instructions[0x39], c.Registers.GetHL, c.Registers.GetSP},
+		{cpu.instructions[0x09], cpu.registers.getHL, cpu.registers.getBC},
+		{cpu.instructions[0x19], cpu.registers.getHL, cpu.registers.getDE},
+		{cpu.instructions[0x29], cpu.registers.getHL, cpu.registers.getHL},
+		{cpu.instructions[0x39], cpu.registers.getHL, cpu.registers.getSP},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := testCase.From()
-			flagZ := c.Flags.Z
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := tc.from()
+			flagZ := cpu.registers.f.getZ()
 			flagN := false
 			flagH := (value1&0xFFF)+(value2&0xFFF) > 0xFFF
 			flagC := uint32(value1)+uint32(value2) > 0xFFFF
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1+value2, testCase.To(), "Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
-		})
-	}
-}
-
-//	ADD SP,e
-func TestADDInstructions5(t *testing.T) {
-	c := tests.InitCPU()
-	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint16
-	}{
-		{c.Instructions[0xE8], c.Registers.GetSP},
-	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
-		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := int(c.Registers.GetSP())
-			value2 := int(int8(tests.Read8BitOperand(&c)))
-			flagZ := false
-			flagN := false
-			flagH := false
-			flagC := false
-			if value2 < 0 {
-				flagH = (value1 & 0xF) < (value2 & 0xF)
-				flagC = (value1 & 0xFF) < (value2 & 0xFF)
-			} else {
-				flagH = (value1&0xF)+(value2&0xF) > 0xF
-				flagC = (value1&0xFF)+(value2&0xFF) > 0xFF
+			tc.instruction.exec(cpu)
+			if value1+value2 != tc.to() {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1+value2, tc.to())
 			}
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, uint16(value1+value2), testCase.To(), "Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	ADC A,r
+// ADD SP,e
+func TestADDInstructions5(t *testing.T) {
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
+	instructions := []struct {
+		instruction instruction
+		to          func() uint16
+	}{
+		{cpu.instructions[0xE8], cpu.registers.getSP},
+	}
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
+		t.Run(testName, func(t *testing.T) {
+			for i := 0; i < 1000; i++ {
+				randomizeRegisters(cpu.registers)
+				value1 := int(cpu.registers.getSP())
+				value2 := int(int8(read8BitOperand(cpu)))
+				flagZ := false
+				flagN := false
+				flagH := false
+				flagC := false
+				if value2 < 0 {
+					flagH = (value1 & 0xF) < (value2 & 0xF)
+					flagC = (value1 & 0xFF) < (value2 & 0xFF)
+				} else {
+					flagH = (value1&0xF)+(value2&0xF) > 0xF
+					flagC = (value1&0xFF)+(value2&0xFF) > 0xFF
+				}
+				tc.instruction.exec(cpu)
+				if uint16(value1+value2) != tc.to() {
+					t.Errorf("Expected 0x%04X, got 0x%04X", uint16(value1+value2), tc.to())
+				}
+				if flagZ != cpu.registers.f.getZ() {
+					t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+				}
+				if flagN != cpu.registers.f.getN() {
+					t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+				}
+				if flagH != cpu.registers.f.getH() {
+					t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+				}
+				if flagC != cpu.registers.f.getC() {
+					t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+				}
+			}
+		})
+	}
+}
+
+// ADC A,r
 func TestADCInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0x88], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0x89], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0x8A], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0x8B], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0x8C], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0x8D], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0x8F], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0x88], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0x89], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0x8A], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0x8B], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0x8C], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0x8D], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0x8F], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			carry := c.Flags.GetCarryAsValue()
-			value1 := testCase.To()
-			value2 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			carry := cpu.registers.f.getCarry()
+			value1 := tc.to()
+			value2 := tc.from()
 			flagZ := value1+value2+carry == 0
 			flagN := false
 			flagH := (value1&0xF)+(value2&0xF)+carry > 0xF
 			flagC := uint16(value1)+uint16(value2)+uint16(carry) > 0xFF
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1+value2+carry, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1+value2+carry != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1+value2+carry, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	ADC A,n
+// ADC A,n
 func TestADCInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCE], c.Registers.GetA},
+		{cpu.instructions[0xCE], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			carry := c.Flags.GetCarryAsValue()
-			value1 := testCase.To()
-			value2 := tests.Read8BitOperand(&c)
+			randomizeRegisters(cpu.registers)
+			carry := cpu.registers.f.getCarry()
+			value1 := tc.to()
+			value2 := read8BitOperand(cpu)
 			flagZ := value1+value2+carry == 0
 			flagN := false
 			flagH := (value1&0xF)+(value2&0xF)+carry > 0xF
 			flagC := uint16(value1)+uint16(value2)+uint16(carry) > 0xFF
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1+value2+carry, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1+value2+carry != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1+value2+carry, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	ADC A,(HL)
+// ADC A,(HL)
 func TestADCInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x8E], c.Registers.GetA},
+		{cpu.instructions[0x8E], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			carry := c.Flags.GetCarryAsValue()
-			value1 := testCase.To()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			carry := cpu.registers.f.getCarry()
+			value1 := tc.to()
+			value2 := cpu.memory.Read(addr)
 			flagZ := value1+value2+carry == 0
 			flagN := false
 			flagH := (value1&0xF)+(value2&0xF)+carry > 0xF
 			flagC := uint16(value1)+uint16(value2)+uint16(carry) > 0xFF
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1+value2+carry, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1+value2+carry != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1+value2+carry, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SUB A,r
+// SUB A,r
 func TestSUBInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0x90], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0x91], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0x92], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0x93], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0x94], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0x95], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0x97], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0x90], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0x91], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0x92], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0x93], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0x94], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0x95], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0x97], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := tc.from()
 			flagZ := value1-value2 == 0
 			flagN := true
 			flagH := (value1 & 0xF) < (value2 & 0xF)
 			flagC := uint16(value1) < uint16(value2)
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1-value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1-value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1-value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SUB A,n
+// SUB A,n
 func TestSUBInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xD6], c.Registers.GetA},
+		{cpu.instructions[0xD6], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := tests.Read8BitOperand(&c)
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := read8BitOperand(cpu)
 			flagZ := value1-value2 == 0
 			flagN := true
 			flagH := (value1 & 0xF) < (value2 & 0xF)
 			flagC := uint16(value1) < uint16(value2)
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1-value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1-value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1-value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SUB A,(HL)
+// SUB A,(HL)
 func TestSUBInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x96], c.Registers.GetA},
+		{cpu.instructions[0x96], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := testCase.To()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := tc.to()
+			value2 := cpu.memory.Read(addr)
 			flagZ := value1-value2 == 0
 			flagN := true
 			flagH := (value1 & 0xF) < (value2 & 0xF)
 			flagC := uint16(value1) < uint16(value2)
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1-value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1-value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1-value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SBC A,r
+// SBC A,r
 func TestSBCInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0x98], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0x99], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0x9A], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0x9B], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0x9C], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0x9D], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0x9F], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0x98], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0x99], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0x9A], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0x9B], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0x9C], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0x9D], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0x9F], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			carry := c.Flags.GetCarryAsValue()
-			value1 := testCase.To()
-			value2 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			carry := cpu.registers.f.getCarry()
+			value1 := tc.to()
+			value2 := tc.from()
 			flagZ := value1-value2-carry == 0
 			flagN := true
 			flagH := (value1 & 0xF) < ((value2 & 0xF) + carry)
 			flagC := uint16(value1) < (uint16(value2) + uint16(carry))
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1-value2-carry, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1-value2-carry != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1-value2-carry, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SBC A,n
+// SBC A,n
 func TestSBCInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xDE], c.Registers.GetA},
+		{cpu.instructions[0xDE], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			carry := c.Flags.GetCarryAsValue()
-			value1 := testCase.To()
-			value2 := tests.Read8BitOperand(&c)
+			randomizeRegisters(cpu.registers)
+			carry := cpu.registers.f.getCarry()
+			value1 := tc.to()
+			value2 := read8BitOperand(cpu)
 			flagZ := value1-value2-carry == 0
 			flagN := true
 			flagH := (value1 & 0xF) < ((value2 & 0xF) + carry)
 			flagC := uint16(value1) < (uint16(value2) + uint16(carry))
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1-value2-carry, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1-value2-carry != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1-value2-carry, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SBC A,(HL)
+// SBC A,(HL)
 func TestSBCInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0x9E], c.Registers.GetA},
+		{cpu.instructions[0x9E], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			carry := c.Flags.GetCarryAsValue()
-			value1 := testCase.To()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			carry := cpu.registers.f.getCarry()
+			value1 := tc.to()
+			value2 := cpu.memory.Read(addr)
 			flagZ := value1-value2-carry == 0
 			flagN := true
 			flagH := (value1 & 0xF) < ((value2 & 0xF) + carry)
 			flagC := uint16(value1) < (uint16(value2) + uint16(carry))
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1-value2-carry, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1-value2-carry != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1-value2-carry, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	AND A,r
+// AND A,r
 func TestANDInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0xA0], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0xA1], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0xA2], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0xA3], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0xA4], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0xA5], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0xA7], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0xA0], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0xA1], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0xA2], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0xA3], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0xA4], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0xA5], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0xA7], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := tc.from()
 			flagZ := value1&value2 == 0
 			flagN := false
 			flagH := true
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1&value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1&value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1&value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	AND A,n
+// AND A,n
 func TestANDInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xE6], c.Registers.GetA},
+		{cpu.instructions[0xE6], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := tests.Read8BitOperand(&c)
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := read8BitOperand(cpu)
 			flagZ := value1&value2 == 0
 			flagN := false
 			flagH := true
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1&value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1&value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1&value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	AND A,(HL)
+// AND A,(HL)
 func TestANDInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xA6], c.Registers.GetA},
+		{cpu.instructions[0xA6], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := testCase.To()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := tc.to()
+			value2 := cpu.memory.Read(addr)
 			flagZ := value1&value2 == 0
 			flagN := false
 			flagH := true
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1&value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1&value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1&value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	XOR A,r
+// XOR A,r
 func TestXORInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0xA8], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0xA9], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0xAA], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0xAB], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0xAC], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0xAD], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0xAF], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0xA8], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0xA9], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0xAA], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0xAB], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0xAC], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0xAD], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0xAF], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := tc.from()
 			flagZ := value1^value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1^value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1^value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1^value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	XOR A,n
+// XOR A,n
 func TestXORInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xEE], c.Registers.GetA},
+		{cpu.instructions[0xEE], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := tests.Read8BitOperand(&c)
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := read8BitOperand(cpu)
 			flagZ := value1^value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1^value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1^value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1^value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	XOR A,(HL)
+// XOR A,(HL)
 func TestXORInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xAE], c.Registers.GetA},
+		{cpu.instructions[0xAE], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := c.Registers.GetA()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := cpu.registers.getA()
+			value2 := cpu.memory.Read(addr)
 			flagZ := value1^value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1^value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1^value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1^value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	OR A,r
+// OR A,r
 func TestORInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0xB0], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0xB1], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0xB2], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0xB3], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0xB4], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0xB5], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0xB7], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0xB0], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0xB1], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0xB2], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0xB3], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0xB4], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0xB5], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0xB7], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := tc.from()
 			flagZ := value1|value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1|value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1|value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1|value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	OR A,n
+// OR A,n
 func TestORInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xF6], c.Registers.GetA},
+		{cpu.instructions[0xF6], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := tests.Read8BitOperand(&c)
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := read8BitOperand(cpu)
 			flagZ := value1|value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1|value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1|value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1|value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	OR A,(HL)
+// OR A,(HL)
 func TestORInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xB6], c.Registers.GetA},
+		{cpu.instructions[0xB6], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := testCase.To()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := tc.to()
+			value2 := cpu.memory.Read(addr)
 			flagZ := value1|value2 == 0
 			flagN := false
 			flagH := false
 			flagC := false
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value1|value2, testCase.To(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value1|value2 != tc.to() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1|value2, tc.to())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	CP A,r
+// CP A,r
 func TestCPInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To, From    func() uint8
+		instruction instruction
+		to, from    func() uint8
 	}{
-		{c.Instructions[0xB8], c.Registers.GetA, c.Registers.GetB},
-		{c.Instructions[0xB9], c.Registers.GetA, c.Registers.GetC},
-		{c.Instructions[0xBA], c.Registers.GetA, c.Registers.GetD},
-		{c.Instructions[0xBB], c.Registers.GetA, c.Registers.GetE},
-		{c.Instructions[0xBC], c.Registers.GetA, c.Registers.GetH},
-		{c.Instructions[0xBD], c.Registers.GetA, c.Registers.GetL},
-		{c.Instructions[0xBF], c.Registers.GetA, c.Registers.GetA},
+		{cpu.instructions[0xB8], cpu.registers.getA, cpu.registers.getB},
+		{cpu.instructions[0xB9], cpu.registers.getA, cpu.registers.getC},
+		{cpu.instructions[0xBA], cpu.registers.getA, cpu.registers.getD},
+		{cpu.instructions[0xBB], cpu.registers.getA, cpu.registers.getE},
+		{cpu.instructions[0xBC], cpu.registers.getA, cpu.registers.getH},
+		{cpu.instructions[0xBD], cpu.registers.getA, cpu.registers.getL},
+		{cpu.instructions[0xBF], cpu.registers.getA, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := tc.from()
 			flagZ := value1 == value2
 			flagN := true
 			flagH := (value1 & 0xF) < (value2 & 0xF)
 			flagC := value1 < value2
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	CP A,n
+// CP A,n
 func TestCPInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xD6], c.Registers.GetA},
+		{cpu.instructions[0xD6], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To()
-			value2 := tests.Read8BitOperand(&c)
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to()
+			value2 := read8BitOperand(cpu)
 			flagZ := value1 == value2
 			flagN := true
 			flagH := (value1 & 0xF) < (value2 & 0xF)
 			flagC := value1 < value2
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	CP A,(HL)
+// CP A,(HL)
 func TestCPInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xBE], c.Registers.GetA},
+		{cpu.instructions[0xBE], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := testCase.To()
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := tc.to()
+			value2 := cpu.memory.Read(addr)
 			flagZ := value1 == value2
 			flagN := true
 			flagH := (value1 & 0xF) < (value2 & 0xF)
 			flagC := value1 < value2
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	INC r
+// INC r
 func TestINCInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0x04], c.Registers.GetB},
-		{c.Instructions[0x0C], c.Registers.GetC},
-		{c.Instructions[0x14], c.Registers.GetD},
-		{c.Instructions[0x1C], c.Registers.GetE},
-		{c.Instructions[0x24], c.Registers.GetH},
-		{c.Instructions[0x2C], c.Registers.GetL},
-		{c.Instructions[0x3C], c.Registers.GetA},
+		{cpu.instructions[0x04], cpu.registers.getB},
+		{cpu.instructions[0x0C], cpu.registers.getC},
+		{cpu.instructions[0x14], cpu.registers.getD},
+		{cpu.instructions[0x1C], cpu.registers.getE},
+		{cpu.instructions[0x24], cpu.registers.getH},
+		{cpu.instructions[0x2C], cpu.registers.getL},
+		{cpu.instructions[0x3C], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.from()
 			value2 := value1 + 1
 			flagZ := value2 == 0
 			flagN := false
 			flagH := value2&0xF == 0
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value2, testCase.From(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value2 != tc.from() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, tc.from())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
 		})
 	}
 }
 
-//	INC (HL)
+// INC (HL)
 func TestINCInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x34]},
+		{cpu.instructions[0x34]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := cpu.memory.Read(addr)
 			value2 := value1 + 1
 			flagZ := value2 == 0
 			flagN := false
 			flagH := value2&0xF == 0
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value2, c.Memory.Read(addr), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value2 != cpu.memory.Read(addr) {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, cpu.memory.Read(addr))
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
 		})
 	}
 }
 
-//	INC rr
+// INC rr
 func TestINCInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint16
+		instruction instruction
+		from        func() uint16
 	}{
-		{c.Instructions[0x03], c.Registers.GetBC},
-		{c.Instructions[0x13], c.Registers.GetDE},
-		{c.Instructions[0x23], c.Registers.GetHL},
-		{c.Instructions[0x33], c.Registers.GetSP},
+		{cpu.instructions[0x03], cpu.registers.getBC},
+		{cpu.instructions[0x13], cpu.registers.getDE},
+		{cpu.instructions[0x23], cpu.registers.getHL},
+		{cpu.instructions[0x33], cpu.registers.getSP},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.from()
 			value2 := value1 + 1
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value2, testCase.From(), "Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			if value2 != tc.from() {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value2, tc.from())
+			}
 		})
 	}
 }
 
-//	DEC r
+// DEC r
 func TestDECInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint8
+		instruction instruction
+		from        func() uint8
 	}{
-		{c.Instructions[0x05], c.Registers.GetB},
-		{c.Instructions[0x0D], c.Registers.GetC},
-		{c.Instructions[0x15], c.Registers.GetD},
-		{c.Instructions[0x1D], c.Registers.GetE},
-		{c.Instructions[0x25], c.Registers.GetH},
-		{c.Instructions[0x2D], c.Registers.GetL},
-		{c.Instructions[0x3D], c.Registers.GetA},
+		{cpu.instructions[0x05], cpu.registers.getB},
+		{cpu.instructions[0x0D], cpu.registers.getC},
+		{cpu.instructions[0x15], cpu.registers.getD},
+		{cpu.instructions[0x1D], cpu.registers.getE},
+		{cpu.instructions[0x25], cpu.registers.getH},
+		{cpu.instructions[0x2D], cpu.registers.getL},
+		{cpu.instructions[0x3D], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.from()
 			value2 := value1 - 1
 			flagZ := value2 == 0
 			flagN := true
 			flagH := value1&0xF == 0
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value2, testCase.From(), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value2 != tc.from() {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, tc.from())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
 		})
 	}
 }
 
-//	DEC (HL)
+// DEC (HL)
 func TestDECInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x35]},
+		{cpu.instructions[0x35]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := cpu.memory.Read(addr)
 			value2 := value1 - 1
 			flagZ := value2 == 0
 			flagN := true
 			flagH := value1&0xF == 0
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value2, c.Memory.Read(addr), "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if value2 != cpu.memory.Read(addr) {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, cpu.memory.Read(addr))
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
 		})
 	}
 }
 
-//	DEC rr
+// DEC rr
 func TestDECInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		From        func() uint16
+		instruction instruction
+		from        func() uint16
 	}{
-		{c.Instructions[0x0B], c.Registers.GetBC},
-		{c.Instructions[0x1B], c.Registers.GetDE},
-		{c.Instructions[0x2B], c.Registers.GetHL},
-		{c.Instructions[0x3B], c.Registers.GetSP},
+		{cpu.instructions[0x0B], cpu.registers.getBC},
+		{cpu.instructions[0x1B], cpu.registers.getDE},
+		{cpu.instructions[0x2B], cpu.registers.getHL},
+		{cpu.instructions[0x3B], cpu.registers.getSP},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.From()
+			randomizeRegisters(cpu.registers)
+			value1 := tc.from()
 			value2 := value1 - 1
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, value2, testCase.From(), "Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			if value2 != tc.from() {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value2, tc.from())
+			}
 		})
 	}
 }
 
-//	DAA
+// DAA
 func TestDAAInstructions(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x27]},
+		{cpu.instructions[0x27]},
 	}
 	operations := []struct {
 		PrevA                      uint8
@@ -5876,1517 +6478,2075 @@ func TestDAAInstructions(t *testing.T) {
 		{0xff, true, true, true, false, 0xf9, false, true, false, false},
 		{0xff, true, true, true, true, 0x99, false, true, false, true},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
 			for _, operation := range operations {
-				c.Registers.SetA(operation.PrevA)
-				c.Flags.SetZ(operation.PrevZ)
-				c.Flags.SetN(operation.PrevN)
-				c.Flags.SetH(operation.PrevH)
-				c.Flags.SetC(operation.PrevC)
-				testCase.Instruction.Exec(&c)
-				tests.Equals(t, operation.CurrA, c.Registers.GetA(), "Expected 0x%02X, got 0x%02X")
-				tests.Equals(t, operation.CurrZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-				tests.Equals(t, operation.CurrN, c.Flags.N, "Flag N. Expected %t, got %t")
-				tests.Equals(t, operation.CurrH, c.Flags.H, "Flag H. Expected %t, got %t")
-				tests.Equals(t, operation.CurrC, c.Flags.C, "Flag C. Expected %t, got %t")
+				cpu.registers.setA(operation.PrevA)
+				cpu.registers.f.setZ(operation.PrevZ)
+				cpu.registers.f.setN(operation.PrevN)
+				cpu.registers.f.setH(operation.PrevH)
+				cpu.registers.f.setC(operation.PrevC)
+				tc.instruction.exec(cpu)
+				if operation.CurrA != cpu.registers.getA() {
+					t.Errorf("Expected 0x%02X, got 0x%02X", operation.CurrA, cpu.registers.getA())
+				}
+				if operation.CurrZ != cpu.registers.f.getZ() {
+					t.Errorf("Flag Z. Expected %t, got %t", operation.CurrZ, cpu.registers.f.getZ())
+				}
+				if operation.CurrN != cpu.registers.f.getN() {
+					t.Errorf("Flag N. Expected %t, got %t", operation.CurrN, cpu.registers.f.getN())
+				}
+				if operation.CurrH != cpu.registers.f.getH() {
+					t.Errorf("Flag H. Expected %t, got %t", operation.CurrH, cpu.registers.f.getH())
+				}
+				if operation.CurrC != cpu.registers.f.getC() {
+					t.Errorf("Flag C. Expected %t, got %t", operation.CurrC, cpu.registers.f.getC())
+				}
 			}
 		})
 	}
 }
 
-//	CPL
+// CPL
 func TestCPLInstructions(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x2F]},
+		{cpu.instructions[0x2F]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := c.Registers.GetA() ^ 0xFF
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetA()
+			randomizeRegisters(cpu.registers)
+			value1 := cpu.registers.getA() ^ 0xFF
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getA()
 			flagN := true
 			flagH := true
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
 		})
 	}
 }
 
-//	RLCA
+// RLCA
 func TestRLCA(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x07]},
+		{cpu.instructions[0x07]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			bit7 := c.Registers.GetA() >> 7
-			value1 := (c.Registers.GetA() << 1) + bit7
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetA()
+			randomizeRegisters(cpu.registers)
+			bit7 := cpu.registers.getA() >> 7
+			value1 := (cpu.registers.getA() << 1) + bit7
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getA()
 			flagC := bit7 == 1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, false, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if false != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", false, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RLA
+// RLA
 func TestRLA(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x17]},
+		{cpu.instructions[0x17]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			carry := c.Flags.GetCarryAsValue()
-			bit7 := c.Registers.GetA() >> 7
-			value1 := (c.Registers.GetA() << 1) + carry
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetA()
+			randomizeRegisters(cpu.registers)
+			carry := cpu.registers.f.getCarry()
+			bit7 := cpu.registers.getA() >> 7
+			value1 := (cpu.registers.getA() << 1) + carry
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getA()
 			flagC := bit7 == 1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, false, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if false != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", false, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RRCA
+// RRCA
 func TestRRCA(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x0F]},
+		{cpu.instructions[0x0F]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			bit0 := c.Registers.GetA() << 7
-			value1 := (c.Registers.GetA() >> 1) + bit0
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetA()
+			randomizeRegisters(cpu.registers)
+			bit0 := cpu.registers.getA() << 7
+			value1 := (cpu.registers.getA() >> 1) + bit0
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getA()
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, false, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if false != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", false, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RRA
+// RRA
 func TestRRA(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x1F]},
+		{cpu.instructions[0x1F]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			carry := c.Flags.GetCarryAsValue() << 7
-			bit0 := c.Registers.GetA() << 7
-			value1 := (c.Registers.GetA() >> 1) + carry
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetA()
+			randomizeRegisters(cpu.registers)
+			carry := cpu.registers.f.getCarry() << 7
+			bit0 := cpu.registers.getA() << 7
+			value1 := (cpu.registers.getA() >> 1) + carry
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getA()
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, false, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if false != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", false, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RLC r
+// RLC r
 func TestRLCInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB00], c.Registers.GetB},
-		{c.Instructions[0xCB01], c.Registers.GetC},
-		{c.Instructions[0xCB02], c.Registers.GetD},
-		{c.Instructions[0xCB03], c.Registers.GetE},
-		{c.Instructions[0xCB04], c.Registers.GetH},
-		{c.Instructions[0xCB05], c.Registers.GetL},
-		{c.Instructions[0xCB07], c.Registers.GetA},
+		{cpu.instructions[0xCB00], cpu.registers.getB},
+		{cpu.instructions[0xCB01], cpu.registers.getC},
+		{cpu.instructions[0xCB02], cpu.registers.getD},
+		{cpu.instructions[0xCB03], cpu.registers.getE},
+		{cpu.instructions[0xCB04], cpu.registers.getH},
+		{cpu.instructions[0xCB05], cpu.registers.getL},
+		{cpu.instructions[0xCB07], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			bit7 := testCase.To() >> 7
-			value1 := (testCase.To() << 1) + bit7
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			bit7 := tc.to() >> 7
+			value1 := (tc.to() << 1) + bit7
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
 			flagZ := value2 == 0
 			flagC := bit7 == 1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RLC (HL)
+// RLC (HL)
 func TestRLCInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCB06]},
+		{cpu.instructions[0xCB06]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			bit7 := c.Memory.Read(addr) >> 7
-			value1 := (c.Memory.Read(addr) << 1) + bit7
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			bit7 := cpu.memory.Read(addr) >> 7
+			value1 := (cpu.memory.Read(addr) << 1) + bit7
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
 			flagZ := value2 == 0
 			flagC := bit7 == 1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RRC r
+// RRC r
 func TestRRCInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB08], c.Registers.GetB},
-		{c.Instructions[0xCB09], c.Registers.GetC},
-		{c.Instructions[0xCB0A], c.Registers.GetD},
-		{c.Instructions[0xCB0B], c.Registers.GetE},
-		{c.Instructions[0xCB0C], c.Registers.GetH},
-		{c.Instructions[0xCB0D], c.Registers.GetL},
-		{c.Instructions[0xCB0F], c.Registers.GetA},
+		{cpu.instructions[0xCB08], cpu.registers.getB},
+		{cpu.instructions[0xCB09], cpu.registers.getC},
+		{cpu.instructions[0xCB0A], cpu.registers.getD},
+		{cpu.instructions[0xCB0B], cpu.registers.getE},
+		{cpu.instructions[0xCB0C], cpu.registers.getH},
+		{cpu.instructions[0xCB0D], cpu.registers.getL},
+		{cpu.instructions[0xCB0F], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			bit0 := testCase.To() << 7
-			value1 := (testCase.To() >> 1) + bit0
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			bit0 := tc.to() << 7
+			value1 := (tc.to() >> 1) + bit0
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
 			flagZ := value2 == 0
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RRC (HL)
+// RRC (HL)
 func TestRRCInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCB0E]},
+		{cpu.instructions[0xCB0E]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			bit0 := c.Memory.Read(addr) << 7
-			value1 := (c.Memory.Read(addr) >> 1) + bit0
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			bit0 := cpu.memory.Read(addr) << 7
+			value1 := (cpu.memory.Read(addr) >> 1) + bit0
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
 			flagZ := value2 == 0
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RL r
+// RL r
 func TestRLInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB10], c.Registers.GetB},
-		{c.Instructions[0xCB11], c.Registers.GetC},
-		{c.Instructions[0xCB12], c.Registers.GetD},
-		{c.Instructions[0xCB13], c.Registers.GetE},
-		{c.Instructions[0xCB14], c.Registers.GetH},
-		{c.Instructions[0xCB15], c.Registers.GetL},
-		{c.Instructions[0xCB17], c.Registers.GetA},
+		{cpu.instructions[0xCB10], cpu.registers.getB},
+		{cpu.instructions[0xCB11], cpu.registers.getC},
+		{cpu.instructions[0xCB12], cpu.registers.getD},
+		{cpu.instructions[0xCB13], cpu.registers.getE},
+		{cpu.instructions[0xCB14], cpu.registers.getH},
+		{cpu.instructions[0xCB15], cpu.registers.getL},
+		{cpu.instructions[0xCB17], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			carry := c.Flags.GetCarryAsValue()
-			bit7 := testCase.To() >> 7
-			value1 := (testCase.To() << 1) + carry
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			carry := cpu.registers.f.getCarry()
+			bit7 := tc.to() >> 7
+			value1 := (tc.to() << 1) + carry
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
 			flagZ := value2 == 0
 			flagC := bit7 == 1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RL (HL)
+// RL (HL)
 func TestRLInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCB16]},
+		{cpu.instructions[0xCB16]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			carry := c.Flags.GetCarryAsValue()
-			bit7 := c.Memory.Read(addr) >> 7
-			value1 := (c.Memory.Read(addr) << 1) + carry
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			carry := cpu.registers.f.getCarry()
+			bit7 := cpu.memory.Read(addr) >> 7
+			value1 := (cpu.memory.Read(addr) << 1) + carry
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
 			flagZ := value2 == 0
 			flagC := bit7 == 1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RR r
+// RR r
 func TestRRInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB18], c.Registers.GetB},
-		{c.Instructions[0xCB19], c.Registers.GetC},
-		{c.Instructions[0xCB1A], c.Registers.GetD},
-		{c.Instructions[0xCB1B], c.Registers.GetE},
-		{c.Instructions[0xCB1C], c.Registers.GetH},
-		{c.Instructions[0xCB1D], c.Registers.GetL},
-		{c.Instructions[0xCB1F], c.Registers.GetA},
+		{cpu.instructions[0xCB18], cpu.registers.getB},
+		{cpu.instructions[0xCB19], cpu.registers.getC},
+		{cpu.instructions[0xCB1A], cpu.registers.getD},
+		{cpu.instructions[0xCB1B], cpu.registers.getE},
+		{cpu.instructions[0xCB1C], cpu.registers.getH},
+		{cpu.instructions[0xCB1D], cpu.registers.getL},
+		{cpu.instructions[0xCB1F], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			carry := c.Flags.GetCarryAsValue() << 7
-			bit0 := testCase.To() << 7
-			value1 := (testCase.To() >> 1) + carry
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			carry := cpu.registers.f.getCarry() << 7
+			bit0 := tc.to() << 7
+			value1 := (tc.to() >> 1) + carry
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
 			flagZ := value2 == 0
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	RR (HL)
+// RR (HL)
 func TestRRInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCB1E]},
+		{cpu.instructions[0xCB1E]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			carry := c.Flags.GetCarryAsValue() << 7
-			bit0 := c.Memory.Read(addr) << 7
-			value1 := (c.Memory.Read(addr) >> 1) + carry
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			carry := cpu.registers.f.getCarry() << 7
+			bit0 := cpu.memory.Read(addr) << 7
+			value1 := (cpu.memory.Read(addr) >> 1) + carry
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
 			flagZ := value2 == 0
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SLA r
+// SLA r
 func TestSLAInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB20], c.Registers.GetB},
-		{c.Instructions[0xCB21], c.Registers.GetC},
-		{c.Instructions[0xCB22], c.Registers.GetD},
-		{c.Instructions[0xCB23], c.Registers.GetE},
-		{c.Instructions[0xCB24], c.Registers.GetH},
-		{c.Instructions[0xCB25], c.Registers.GetL},
-		{c.Instructions[0xCB27], c.Registers.GetA},
+		{cpu.instructions[0xCB20], cpu.registers.getB},
+		{cpu.instructions[0xCB21], cpu.registers.getC},
+		{cpu.instructions[0xCB22], cpu.registers.getD},
+		{cpu.instructions[0xCB23], cpu.registers.getE},
+		{cpu.instructions[0xCB24], cpu.registers.getH},
+		{cpu.instructions[0xCB25], cpu.registers.getL},
+		{cpu.instructions[0xCB27], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			bit7 := testCase.To() >> 7
-			value1 := testCase.To() << 1
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			bit7 := tc.to() >> 7
+			value1 := tc.to() << 1
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
 			flagZ := value2 == 0
 			flagC := bit7 == 1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SLA (HL)
+// SLA (HL)
 func TestSLAInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCB26]},
+		{cpu.instructions[0xCB26]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			bit7 := c.Memory.Read(addr) >> 7
-			value1 := c.Memory.Read(addr) << 1
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			bit7 := cpu.memory.Read(addr) >> 7
+			value1 := cpu.memory.Read(addr) << 1
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
 			flagZ := value2 == 0
 			flagC := bit7 == 1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SRA r
+// SRA r
 func TestSRAInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB28], c.Registers.GetB},
-		{c.Instructions[0xCB29], c.Registers.GetC},
-		{c.Instructions[0xCB2A], c.Registers.GetD},
-		{c.Instructions[0xCB2B], c.Registers.GetE},
-		{c.Instructions[0xCB2C], c.Registers.GetH},
-		{c.Instructions[0xCB2D], c.Registers.GetL},
-		{c.Instructions[0xCB2F], c.Registers.GetA},
+		{cpu.instructions[0xCB28], cpu.registers.getB},
+		{cpu.instructions[0xCB29], cpu.registers.getC},
+		{cpu.instructions[0xCB2A], cpu.registers.getD},
+		{cpu.instructions[0xCB2B], cpu.registers.getE},
+		{cpu.instructions[0xCB2C], cpu.registers.getH},
+		{cpu.instructions[0xCB2D], cpu.registers.getL},
+		{cpu.instructions[0xCB2F], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			bit0 := testCase.To() << 7
-			bit7 := testCase.To() & 128
-			value1 := (testCase.To() >> 1) + bit7
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			bit0 := tc.to() << 7
+			bit7 := tc.to() & 128
+			value1 := (tc.to() >> 1) + bit7
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
 			flagZ := value2 == 0
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SRA (HL)
+// SRA (HL)
 func TestSRAInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCB2E]},
+		{cpu.instructions[0xCB2E]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			bit0 := c.Memory.Read(addr) << 7
-			bit7 := c.Memory.Read(addr) & 128
-			value1 := (c.Memory.Read(addr) >> 1) + bit7
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			bit0 := cpu.memory.Read(addr) << 7
+			bit7 := cpu.memory.Read(addr) & 128
+			value1 := (cpu.memory.Read(addr) >> 1) + bit7
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
 			flagZ := value2 == 0
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SWAP r
+// SWAP r
 func TestSWAPInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB30], c.Registers.GetB},
-		{c.Instructions[0xCB31], c.Registers.GetC},
-		{c.Instructions[0xCB32], c.Registers.GetD},
-		{c.Instructions[0xCB33], c.Registers.GetE},
-		{c.Instructions[0xCB34], c.Registers.GetH},
-		{c.Instructions[0xCB35], c.Registers.GetL},
-		{c.Instructions[0xCB37], c.Registers.GetA},
+		{cpu.instructions[0xCB30], cpu.registers.getB},
+		{cpu.instructions[0xCB31], cpu.registers.getC},
+		{cpu.instructions[0xCB32], cpu.registers.getD},
+		{cpu.instructions[0xCB33], cpu.registers.getE},
+		{cpu.instructions[0xCB34], cpu.registers.getH},
+		{cpu.instructions[0xCB35], cpu.registers.getL},
+		{cpu.instructions[0xCB37], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			lo := testCase.To() % 16
-			hi := testCase.To() >> 4
+			randomizeRegisters(cpu.registers)
+			lo := tc.to() % 16
+			hi := tc.to() >> 4
 			value1 := lo<<4 | hi
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
 			flagZ := value2 == 0
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if false != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", false, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SWAP (HL)
+// SWAP (HL)
 func TestSWAPInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCB36]},
+		{cpu.instructions[0xCB36]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			lo := c.Memory.Read(addr) % 16
-			hi := c.Memory.Read(addr) >> 4
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			lo := cpu.memory.Read(addr) % 16
+			hi := cpu.memory.Read(addr) >> 4
 			value1 := lo<<4 | hi
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
 			flagZ := value2 == 0
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if false != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", false, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SRL r
+// SRL r
 func TestSRLInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		To          func() uint8
+		instruction instruction
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB38], c.Registers.GetB},
-		{c.Instructions[0xCB39], c.Registers.GetC},
-		{c.Instructions[0xCB3A], c.Registers.GetD},
-		{c.Instructions[0xCB3B], c.Registers.GetE},
-		{c.Instructions[0xCB3C], c.Registers.GetH},
-		{c.Instructions[0xCB3D], c.Registers.GetL},
-		{c.Instructions[0xCB3F], c.Registers.GetA},
+		{cpu.instructions[0xCB38], cpu.registers.getB},
+		{cpu.instructions[0xCB39], cpu.registers.getC},
+		{cpu.instructions[0xCB3A], cpu.registers.getD},
+		{cpu.instructions[0xCB3B], cpu.registers.getE},
+		{cpu.instructions[0xCB3C], cpu.registers.getH},
+		{cpu.instructions[0xCB3D], cpu.registers.getL},
+		{cpu.instructions[0xCB3F], cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			bit0 := testCase.To() << 7
-			value1 := testCase.To() >> 1
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
+			randomizeRegisters(cpu.registers)
+			bit0 := tc.to() << 7
+			value1 := tc.to() >> 1
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
 			flagZ := value2 == 0
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	SRL (HL)
+// SRL (HL)
 func TestSRLInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCB3E]},
+		{cpu.instructions[0xCB3E]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			bit0 := c.Memory.Read(addr) << 7
-			value1 := c.Memory.Read(addr) >> 1
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			bit0 := cpu.memory.Read(addr) << 7
+			value1 := cpu.memory.Read(addr) >> 1
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
 			flagZ := value2 == 0
 			flagC := bit0 == 128
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if false != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", false, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	BIT n,r
+// BIT n,r
 func TestBITInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		BitIndex    int
-		To          func() uint8
+		instruction instruction
+		bitIndex    int
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB40], 0, c.Registers.GetB},
-		{c.Instructions[0xCB41], 0, c.Registers.GetC},
-		{c.Instructions[0xCB42], 0, c.Registers.GetD},
-		{c.Instructions[0xCB43], 0, c.Registers.GetE},
-		{c.Instructions[0xCB44], 0, c.Registers.GetH},
-		{c.Instructions[0xCB45], 0, c.Registers.GetL},
-		{c.Instructions[0xCB47], 0, c.Registers.GetA},
-		{c.Instructions[0xCB48], 1, c.Registers.GetB},
-		{c.Instructions[0xCB49], 1, c.Registers.GetC},
-		{c.Instructions[0xCB4A], 1, c.Registers.GetD},
-		{c.Instructions[0xCB4B], 1, c.Registers.GetE},
-		{c.Instructions[0xCB4C], 1, c.Registers.GetH},
-		{c.Instructions[0xCB4D], 1, c.Registers.GetL},
-		{c.Instructions[0xCB4F], 1, c.Registers.GetA},
-		{c.Instructions[0xCB50], 2, c.Registers.GetB},
-		{c.Instructions[0xCB51], 2, c.Registers.GetC},
-		{c.Instructions[0xCB52], 2, c.Registers.GetD},
-		{c.Instructions[0xCB53], 2, c.Registers.GetE},
-		{c.Instructions[0xCB54], 2, c.Registers.GetH},
-		{c.Instructions[0xCB55], 2, c.Registers.GetL},
-		{c.Instructions[0xCB57], 2, c.Registers.GetA},
-		{c.Instructions[0xCB58], 3, c.Registers.GetB},
-		{c.Instructions[0xCB59], 3, c.Registers.GetC},
-		{c.Instructions[0xCB5A], 3, c.Registers.GetD},
-		{c.Instructions[0xCB5B], 3, c.Registers.GetE},
-		{c.Instructions[0xCB5C], 3, c.Registers.GetH},
-		{c.Instructions[0xCB5D], 3, c.Registers.GetL},
-		{c.Instructions[0xCB5F], 3, c.Registers.GetA},
-		{c.Instructions[0xCB60], 4, c.Registers.GetB},
-		{c.Instructions[0xCB61], 4, c.Registers.GetC},
-		{c.Instructions[0xCB62], 4, c.Registers.GetD},
-		{c.Instructions[0xCB63], 4, c.Registers.GetE},
-		{c.Instructions[0xCB64], 4, c.Registers.GetH},
-		{c.Instructions[0xCB65], 4, c.Registers.GetL},
-		{c.Instructions[0xCB67], 4, c.Registers.GetA},
-		{c.Instructions[0xCB68], 5, c.Registers.GetB},
-		{c.Instructions[0xCB69], 5, c.Registers.GetC},
-		{c.Instructions[0xCB6A], 5, c.Registers.GetD},
-		{c.Instructions[0xCB6B], 5, c.Registers.GetE},
-		{c.Instructions[0xCB6C], 5, c.Registers.GetH},
-		{c.Instructions[0xCB6D], 5, c.Registers.GetL},
-		{c.Instructions[0xCB6F], 5, c.Registers.GetA},
-		{c.Instructions[0xCB70], 6, c.Registers.GetB},
-		{c.Instructions[0xCB71], 6, c.Registers.GetC},
-		{c.Instructions[0xCB72], 6, c.Registers.GetD},
-		{c.Instructions[0xCB73], 6, c.Registers.GetE},
-		{c.Instructions[0xCB74], 6, c.Registers.GetH},
-		{c.Instructions[0xCB75], 6, c.Registers.GetL},
-		{c.Instructions[0xCB77], 6, c.Registers.GetA},
-		{c.Instructions[0xCB78], 7, c.Registers.GetB},
-		{c.Instructions[0xCB79], 7, c.Registers.GetC},
-		{c.Instructions[0xCB7A], 7, c.Registers.GetD},
-		{c.Instructions[0xCB7B], 7, c.Registers.GetE},
-		{c.Instructions[0xCB7C], 7, c.Registers.GetH},
-		{c.Instructions[0xCB7D], 7, c.Registers.GetL},
-		{c.Instructions[0xCB7F], 7, c.Registers.GetA},
+		{cpu.instructions[0xCB40], 0, cpu.registers.getB},
+		{cpu.instructions[0xCB41], 0, cpu.registers.getC},
+		{cpu.instructions[0xCB42], 0, cpu.registers.getD},
+		{cpu.instructions[0xCB43], 0, cpu.registers.getE},
+		{cpu.instructions[0xCB44], 0, cpu.registers.getH},
+		{cpu.instructions[0xCB45], 0, cpu.registers.getL},
+		{cpu.instructions[0xCB47], 0, cpu.registers.getA},
+		{cpu.instructions[0xCB48], 1, cpu.registers.getB},
+		{cpu.instructions[0xCB49], 1, cpu.registers.getC},
+		{cpu.instructions[0xCB4A], 1, cpu.registers.getD},
+		{cpu.instructions[0xCB4B], 1, cpu.registers.getE},
+		{cpu.instructions[0xCB4C], 1, cpu.registers.getH},
+		{cpu.instructions[0xCB4D], 1, cpu.registers.getL},
+		{cpu.instructions[0xCB4F], 1, cpu.registers.getA},
+		{cpu.instructions[0xCB50], 2, cpu.registers.getB},
+		{cpu.instructions[0xCB51], 2, cpu.registers.getC},
+		{cpu.instructions[0xCB52], 2, cpu.registers.getD},
+		{cpu.instructions[0xCB53], 2, cpu.registers.getE},
+		{cpu.instructions[0xCB54], 2, cpu.registers.getH},
+		{cpu.instructions[0xCB55], 2, cpu.registers.getL},
+		{cpu.instructions[0xCB57], 2, cpu.registers.getA},
+		{cpu.instructions[0xCB58], 3, cpu.registers.getB},
+		{cpu.instructions[0xCB59], 3, cpu.registers.getC},
+		{cpu.instructions[0xCB5A], 3, cpu.registers.getD},
+		{cpu.instructions[0xCB5B], 3, cpu.registers.getE},
+		{cpu.instructions[0xCB5C], 3, cpu.registers.getH},
+		{cpu.instructions[0xCB5D], 3, cpu.registers.getL},
+		{cpu.instructions[0xCB5F], 3, cpu.registers.getA},
+		{cpu.instructions[0xCB60], 4, cpu.registers.getB},
+		{cpu.instructions[0xCB61], 4, cpu.registers.getC},
+		{cpu.instructions[0xCB62], 4, cpu.registers.getD},
+		{cpu.instructions[0xCB63], 4, cpu.registers.getE},
+		{cpu.instructions[0xCB64], 4, cpu.registers.getH},
+		{cpu.instructions[0xCB65], 4, cpu.registers.getL},
+		{cpu.instructions[0xCB67], 4, cpu.registers.getA},
+		{cpu.instructions[0xCB68], 5, cpu.registers.getB},
+		{cpu.instructions[0xCB69], 5, cpu.registers.getC},
+		{cpu.instructions[0xCB6A], 5, cpu.registers.getD},
+		{cpu.instructions[0xCB6B], 5, cpu.registers.getE},
+		{cpu.instructions[0xCB6C], 5, cpu.registers.getH},
+		{cpu.instructions[0xCB6D], 5, cpu.registers.getL},
+		{cpu.instructions[0xCB6F], 5, cpu.registers.getA},
+		{cpu.instructions[0xCB70], 6, cpu.registers.getB},
+		{cpu.instructions[0xCB71], 6, cpu.registers.getC},
+		{cpu.instructions[0xCB72], 6, cpu.registers.getD},
+		{cpu.instructions[0xCB73], 6, cpu.registers.getE},
+		{cpu.instructions[0xCB74], 6, cpu.registers.getH},
+		{cpu.instructions[0xCB75], 6, cpu.registers.getL},
+		{cpu.instructions[0xCB77], 6, cpu.registers.getA},
+		{cpu.instructions[0xCB78], 7, cpu.registers.getB},
+		{cpu.instructions[0xCB79], 7, cpu.registers.getC},
+		{cpu.instructions[0xCB7A], 7, cpu.registers.getD},
+		{cpu.instructions[0xCB7B], 7, cpu.registers.getE},
+		{cpu.instructions[0xCB7C], 7, cpu.registers.getH},
+		{cpu.instructions[0xCB7D], 7, cpu.registers.getL},
+		{cpu.instructions[0xCB7F], 7, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := (testCase.To() & (1 << testCase.BitIndex)) == (1 << testCase.BitIndex)
-			testCase.Instruction.Exec(&c)
-			value2 := !c.Flags.Z
+			randomizeRegisters(cpu.registers)
+			value1 := (tc.to() & (1 << tc.bitIndex)) == (1 << tc.bitIndex)
+			tc.instruction.exec(cpu)
+			value2 := !cpu.registers.f.getZ()
 			flagZ := !value1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, true, c.Flags.H, "Flag H. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected %v, got %v", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if true != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", true, cpu.registers.f.getH())
+			}
 		})
 	}
 }
 
-//	BIT n,(HL)
+// BIT n,(HL)
 func TestBITInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		BitIndex    int
+		instruction instruction
+		bitIndex    int
 	}{
-		{c.Instructions[0xCB46], 0},
-		{c.Instructions[0xCB4E], 1},
-		{c.Instructions[0xCB56], 2},
-		{c.Instructions[0xCB5E], 3},
-		{c.Instructions[0xCB66], 4},
-		{c.Instructions[0xCB6E], 5},
-		{c.Instructions[0xCB76], 6},
-		{c.Instructions[0xCB7E], 7},
+		{cpu.instructions[0xCB46], 0},
+		{cpu.instructions[0xCB4E], 1},
+		{cpu.instructions[0xCB56], 2},
+		{cpu.instructions[0xCB5E], 3},
+		{cpu.instructions[0xCB66], 4},
+		{cpu.instructions[0xCB6E], 5},
+		{cpu.instructions[0xCB76], 6},
+		{cpu.instructions[0xCB7E], 7},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := (c.Memory.Read(addr) & (1 << testCase.BitIndex)) == (1 << testCase.BitIndex)
-			testCase.Instruction.Exec(&c)
-			value2 := !c.Flags.Z
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := (cpu.memory.Read(addr) & (1 << tc.bitIndex)) == (1 << tc.bitIndex)
+			tc.instruction.exec(cpu)
+			value2 := !cpu.registers.f.getZ()
 			flagZ := !value1
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, false, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, true, c.Flags.H, "Flag H. Expected %t, got %t")
+			if value1 != value2 {
+				t.Errorf("Expected %v, got %v", value1, value2)
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if false != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", false, cpu.registers.f.getN())
+			}
+			if true != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", true, cpu.registers.f.getH())
+			}
 		})
 	}
 }
 
-//	RES n,r
+// RES n,r
 func TestRESInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		BitIndex    int
-		To          func() uint8
+		instruction instruction
+		bitIndex    int
+		to          func() uint8
 	}{
-		{c.Instructions[0xCB80], 0, c.Registers.GetB},
-		{c.Instructions[0xCB81], 0, c.Registers.GetC},
-		{c.Instructions[0xCB82], 0, c.Registers.GetD},
-		{c.Instructions[0xCB83], 0, c.Registers.GetE},
-		{c.Instructions[0xCB84], 0, c.Registers.GetH},
-		{c.Instructions[0xCB85], 0, c.Registers.GetL},
-		{c.Instructions[0xCB87], 0, c.Registers.GetA},
-		{c.Instructions[0xCB88], 1, c.Registers.GetB},
-		{c.Instructions[0xCB89], 1, c.Registers.GetC},
-		{c.Instructions[0xCB8A], 1, c.Registers.GetD},
-		{c.Instructions[0xCB8B], 1, c.Registers.GetE},
-		{c.Instructions[0xCB8C], 1, c.Registers.GetH},
-		{c.Instructions[0xCB8D], 1, c.Registers.GetL},
-		{c.Instructions[0xCB8F], 1, c.Registers.GetA},
-		{c.Instructions[0xCB90], 2, c.Registers.GetB},
-		{c.Instructions[0xCB91], 2, c.Registers.GetC},
-		{c.Instructions[0xCB92], 2, c.Registers.GetD},
-		{c.Instructions[0xCB93], 2, c.Registers.GetE},
-		{c.Instructions[0xCB94], 2, c.Registers.GetH},
-		{c.Instructions[0xCB95], 2, c.Registers.GetL},
-		{c.Instructions[0xCB97], 2, c.Registers.GetA},
-		{c.Instructions[0xCB98], 3, c.Registers.GetB},
-		{c.Instructions[0xCB99], 3, c.Registers.GetC},
-		{c.Instructions[0xCB9A], 3, c.Registers.GetD},
-		{c.Instructions[0xCB9B], 3, c.Registers.GetE},
-		{c.Instructions[0xCB9C], 3, c.Registers.GetH},
-		{c.Instructions[0xCB9D], 3, c.Registers.GetL},
-		{c.Instructions[0xCB9F], 3, c.Registers.GetA},
-		{c.Instructions[0xCBA0], 4, c.Registers.GetB},
-		{c.Instructions[0xCBA1], 4, c.Registers.GetC},
-		{c.Instructions[0xCBA2], 4, c.Registers.GetD},
-		{c.Instructions[0xCBA3], 4, c.Registers.GetE},
-		{c.Instructions[0xCBA4], 4, c.Registers.GetH},
-		{c.Instructions[0xCBA5], 4, c.Registers.GetL},
-		{c.Instructions[0xCBA7], 4, c.Registers.GetA},
-		{c.Instructions[0xCBA8], 5, c.Registers.GetB},
-		{c.Instructions[0xCBA9], 5, c.Registers.GetC},
-		{c.Instructions[0xCBAA], 5, c.Registers.GetD},
-		{c.Instructions[0xCBAB], 5, c.Registers.GetE},
-		{c.Instructions[0xCBAC], 5, c.Registers.GetH},
-		{c.Instructions[0xCBAD], 5, c.Registers.GetL},
-		{c.Instructions[0xCBAF], 5, c.Registers.GetA},
-		{c.Instructions[0xCBB0], 6, c.Registers.GetB},
-		{c.Instructions[0xCBB1], 6, c.Registers.GetC},
-		{c.Instructions[0xCBB2], 6, c.Registers.GetD},
-		{c.Instructions[0xCBB3], 6, c.Registers.GetE},
-		{c.Instructions[0xCBB4], 6, c.Registers.GetH},
-		{c.Instructions[0xCBB5], 6, c.Registers.GetL},
-		{c.Instructions[0xCBB7], 6, c.Registers.GetA},
-		{c.Instructions[0xCBB8], 7, c.Registers.GetB},
-		{c.Instructions[0xCBB9], 7, c.Registers.GetC},
-		{c.Instructions[0xCBBA], 7, c.Registers.GetD},
-		{c.Instructions[0xCBBB], 7, c.Registers.GetE},
-		{c.Instructions[0xCBBC], 7, c.Registers.GetH},
-		{c.Instructions[0xCBBD], 7, c.Registers.GetL},
-		{c.Instructions[0xCBBF], 7, c.Registers.GetA},
+		{cpu.instructions[0xCB80], 0, cpu.registers.getB},
+		{cpu.instructions[0xCB81], 0, cpu.registers.getC},
+		{cpu.instructions[0xCB82], 0, cpu.registers.getD},
+		{cpu.instructions[0xCB83], 0, cpu.registers.getE},
+		{cpu.instructions[0xCB84], 0, cpu.registers.getH},
+		{cpu.instructions[0xCB85], 0, cpu.registers.getL},
+		{cpu.instructions[0xCB87], 0, cpu.registers.getA},
+		{cpu.instructions[0xCB88], 1, cpu.registers.getB},
+		{cpu.instructions[0xCB89], 1, cpu.registers.getC},
+		{cpu.instructions[0xCB8A], 1, cpu.registers.getD},
+		{cpu.instructions[0xCB8B], 1, cpu.registers.getE},
+		{cpu.instructions[0xCB8C], 1, cpu.registers.getH},
+		{cpu.instructions[0xCB8D], 1, cpu.registers.getL},
+		{cpu.instructions[0xCB8F], 1, cpu.registers.getA},
+		{cpu.instructions[0xCB90], 2, cpu.registers.getB},
+		{cpu.instructions[0xCB91], 2, cpu.registers.getC},
+		{cpu.instructions[0xCB92], 2, cpu.registers.getD},
+		{cpu.instructions[0xCB93], 2, cpu.registers.getE},
+		{cpu.instructions[0xCB94], 2, cpu.registers.getH},
+		{cpu.instructions[0xCB95], 2, cpu.registers.getL},
+		{cpu.instructions[0xCB97], 2, cpu.registers.getA},
+		{cpu.instructions[0xCB98], 3, cpu.registers.getB},
+		{cpu.instructions[0xCB99], 3, cpu.registers.getC},
+		{cpu.instructions[0xCB9A], 3, cpu.registers.getD},
+		{cpu.instructions[0xCB9B], 3, cpu.registers.getE},
+		{cpu.instructions[0xCB9C], 3, cpu.registers.getH},
+		{cpu.instructions[0xCB9D], 3, cpu.registers.getL},
+		{cpu.instructions[0xCB9F], 3, cpu.registers.getA},
+		{cpu.instructions[0xCBA0], 4, cpu.registers.getB},
+		{cpu.instructions[0xCBA1], 4, cpu.registers.getC},
+		{cpu.instructions[0xCBA2], 4, cpu.registers.getD},
+		{cpu.instructions[0xCBA3], 4, cpu.registers.getE},
+		{cpu.instructions[0xCBA4], 4, cpu.registers.getH},
+		{cpu.instructions[0xCBA5], 4, cpu.registers.getL},
+		{cpu.instructions[0xCBA7], 4, cpu.registers.getA},
+		{cpu.instructions[0xCBA8], 5, cpu.registers.getB},
+		{cpu.instructions[0xCBA9], 5, cpu.registers.getC},
+		{cpu.instructions[0xCBAA], 5, cpu.registers.getD},
+		{cpu.instructions[0xCBAB], 5, cpu.registers.getE},
+		{cpu.instructions[0xCBAC], 5, cpu.registers.getH},
+		{cpu.instructions[0xCBAD], 5, cpu.registers.getL},
+		{cpu.instructions[0xCBAF], 5, cpu.registers.getA},
+		{cpu.instructions[0xCBB0], 6, cpu.registers.getB},
+		{cpu.instructions[0xCBB1], 6, cpu.registers.getC},
+		{cpu.instructions[0xCBB2], 6, cpu.registers.getD},
+		{cpu.instructions[0xCBB3], 6, cpu.registers.getE},
+		{cpu.instructions[0xCBB4], 6, cpu.registers.getH},
+		{cpu.instructions[0xCBB5], 6, cpu.registers.getL},
+		{cpu.instructions[0xCBB7], 6, cpu.registers.getA},
+		{cpu.instructions[0xCBB8], 7, cpu.registers.getB},
+		{cpu.instructions[0xCBB9], 7, cpu.registers.getC},
+		{cpu.instructions[0xCBBA], 7, cpu.registers.getD},
+		{cpu.instructions[0xCBBB], 7, cpu.registers.getE},
+		{cpu.instructions[0xCBBC], 7, cpu.registers.getH},
+		{cpu.instructions[0xCBBD], 7, cpu.registers.getL},
+		{cpu.instructions[0xCBBF], 7, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To() & (0xFF - (1 << testCase.BitIndex))
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to() & (0xFF - (1 << tc.bitIndex))
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	RES n,(HL)
+// RES n,(HL)
 func TestRESInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		BitIndex    int
+		instruction instruction
+		bitIndex    int
 	}{
-		{c.Instructions[0xCB86], 0},
-		{c.Instructions[0xCB8E], 1},
-		{c.Instructions[0xCB96], 2},
-		{c.Instructions[0xCB9E], 3},
-		{c.Instructions[0xCBA6], 4},
-		{c.Instructions[0xCBAE], 5},
-		{c.Instructions[0xCBB6], 6},
-		{c.Instructions[0xCBBE], 7},
+		{cpu.instructions[0xCB86], 0},
+		{cpu.instructions[0xCB8E], 1},
+		{cpu.instructions[0xCB96], 2},
+		{cpu.instructions[0xCB9E], 3},
+		{cpu.instructions[0xCBA6], 4},
+		{cpu.instructions[0xCBAE], 5},
+		{cpu.instructions[0xCBB6], 6},
+		{cpu.instructions[0xCBBE], 7},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := c.Memory.Read(addr) & (0xFF - (1 << testCase.BitIndex))
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := cpu.memory.Read(addr) & (0xFF - (1 << tc.bitIndex))
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	SET n,r
+// SET n,r
 func TestSETInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		BitIndex    int
-		To          func() uint8
+		instruction instruction
+		bitIndex    int
+		to          func() uint8
 	}{
-		{c.Instructions[0xCBC0], 0, c.Registers.GetB},
-		{c.Instructions[0xCBC1], 0, c.Registers.GetC},
-		{c.Instructions[0xCBC2], 0, c.Registers.GetD},
-		{c.Instructions[0xCBC3], 0, c.Registers.GetE},
-		{c.Instructions[0xCBC4], 0, c.Registers.GetH},
-		{c.Instructions[0xCBC5], 0, c.Registers.GetL},
-		{c.Instructions[0xCBC7], 0, c.Registers.GetA},
-		{c.Instructions[0xCBC8], 1, c.Registers.GetB},
-		{c.Instructions[0xCBC9], 1, c.Registers.GetC},
-		{c.Instructions[0xCBCA], 1, c.Registers.GetD},
-		{c.Instructions[0xCBCB], 1, c.Registers.GetE},
-		{c.Instructions[0xCBCC], 1, c.Registers.GetH},
-		{c.Instructions[0xCBCD], 1, c.Registers.GetL},
-		{c.Instructions[0xCBCF], 1, c.Registers.GetA},
-		{c.Instructions[0xCBD0], 2, c.Registers.GetB},
-		{c.Instructions[0xCBD1], 2, c.Registers.GetC},
-		{c.Instructions[0xCBD2], 2, c.Registers.GetD},
-		{c.Instructions[0xCBD3], 2, c.Registers.GetE},
-		{c.Instructions[0xCBD4], 2, c.Registers.GetH},
-		{c.Instructions[0xCBD5], 2, c.Registers.GetL},
-		{c.Instructions[0xCBD7], 2, c.Registers.GetA},
-		{c.Instructions[0xCBD8], 3, c.Registers.GetB},
-		{c.Instructions[0xCBD9], 3, c.Registers.GetC},
-		{c.Instructions[0xCBDA], 3, c.Registers.GetD},
-		{c.Instructions[0xCBDB], 3, c.Registers.GetE},
-		{c.Instructions[0xCBDC], 3, c.Registers.GetH},
-		{c.Instructions[0xCBDD], 3, c.Registers.GetL},
-		{c.Instructions[0xCBDF], 3, c.Registers.GetA},
-		{c.Instructions[0xCBE0], 4, c.Registers.GetB},
-		{c.Instructions[0xCBE1], 4, c.Registers.GetC},
-		{c.Instructions[0xCBE2], 4, c.Registers.GetD},
-		{c.Instructions[0xCBE3], 4, c.Registers.GetE},
-		{c.Instructions[0xCBE4], 4, c.Registers.GetH},
-		{c.Instructions[0xCBE5], 4, c.Registers.GetL},
-		{c.Instructions[0xCBE7], 4, c.Registers.GetA},
-		{c.Instructions[0xCBE8], 5, c.Registers.GetB},
-		{c.Instructions[0xCBE9], 5, c.Registers.GetC},
-		{c.Instructions[0xCBEA], 5, c.Registers.GetD},
-		{c.Instructions[0xCBEB], 5, c.Registers.GetE},
-		{c.Instructions[0xCBEC], 5, c.Registers.GetH},
-		{c.Instructions[0xCBED], 5, c.Registers.GetL},
-		{c.Instructions[0xCBEF], 5, c.Registers.GetA},
-		{c.Instructions[0xCBF0], 6, c.Registers.GetB},
-		{c.Instructions[0xCBF1], 6, c.Registers.GetC},
-		{c.Instructions[0xCBF2], 6, c.Registers.GetD},
-		{c.Instructions[0xCBF3], 6, c.Registers.GetE},
-		{c.Instructions[0xCBF4], 6, c.Registers.GetH},
-		{c.Instructions[0xCBF5], 6, c.Registers.GetL},
-		{c.Instructions[0xCBF7], 6, c.Registers.GetA},
-		{c.Instructions[0xCBF8], 7, c.Registers.GetB},
-		{c.Instructions[0xCBF9], 7, c.Registers.GetC},
-		{c.Instructions[0xCBFA], 7, c.Registers.GetD},
-		{c.Instructions[0xCBFB], 7, c.Registers.GetE},
-		{c.Instructions[0xCBFC], 7, c.Registers.GetH},
-		{c.Instructions[0xCBFD], 7, c.Registers.GetL},
-		{c.Instructions[0xCBFF], 7, c.Registers.GetA},
+		{cpu.instructions[0xCBC0], 0, cpu.registers.getB},
+		{cpu.instructions[0xCBC1], 0, cpu.registers.getC},
+		{cpu.instructions[0xCBC2], 0, cpu.registers.getD},
+		{cpu.instructions[0xCBC3], 0, cpu.registers.getE},
+		{cpu.instructions[0xCBC4], 0, cpu.registers.getH},
+		{cpu.instructions[0xCBC5], 0, cpu.registers.getL},
+		{cpu.instructions[0xCBC7], 0, cpu.registers.getA},
+		{cpu.instructions[0xCBC8], 1, cpu.registers.getB},
+		{cpu.instructions[0xCBC9], 1, cpu.registers.getC},
+		{cpu.instructions[0xCBCA], 1, cpu.registers.getD},
+		{cpu.instructions[0xCBCB], 1, cpu.registers.getE},
+		{cpu.instructions[0xCBCC], 1, cpu.registers.getH},
+		{cpu.instructions[0xCBCD], 1, cpu.registers.getL},
+		{cpu.instructions[0xCBCF], 1, cpu.registers.getA},
+		{cpu.instructions[0xCBD0], 2, cpu.registers.getB},
+		{cpu.instructions[0xCBD1], 2, cpu.registers.getC},
+		{cpu.instructions[0xCBD2], 2, cpu.registers.getD},
+		{cpu.instructions[0xCBD3], 2, cpu.registers.getE},
+		{cpu.instructions[0xCBD4], 2, cpu.registers.getH},
+		{cpu.instructions[0xCBD5], 2, cpu.registers.getL},
+		{cpu.instructions[0xCBD7], 2, cpu.registers.getA},
+		{cpu.instructions[0xCBD8], 3, cpu.registers.getB},
+		{cpu.instructions[0xCBD9], 3, cpu.registers.getC},
+		{cpu.instructions[0xCBDA], 3, cpu.registers.getD},
+		{cpu.instructions[0xCBDB], 3, cpu.registers.getE},
+		{cpu.instructions[0xCBDC], 3, cpu.registers.getH},
+		{cpu.instructions[0xCBDD], 3, cpu.registers.getL},
+		{cpu.instructions[0xCBDF], 3, cpu.registers.getA},
+		{cpu.instructions[0xCBE0], 4, cpu.registers.getB},
+		{cpu.instructions[0xCBE1], 4, cpu.registers.getC},
+		{cpu.instructions[0xCBE2], 4, cpu.registers.getD},
+		{cpu.instructions[0xCBE3], 4, cpu.registers.getE},
+		{cpu.instructions[0xCBE4], 4, cpu.registers.getH},
+		{cpu.instructions[0xCBE5], 4, cpu.registers.getL},
+		{cpu.instructions[0xCBE7], 4, cpu.registers.getA},
+		{cpu.instructions[0xCBE8], 5, cpu.registers.getB},
+		{cpu.instructions[0xCBE9], 5, cpu.registers.getC},
+		{cpu.instructions[0xCBEA], 5, cpu.registers.getD},
+		{cpu.instructions[0xCBEB], 5, cpu.registers.getE},
+		{cpu.instructions[0xCBEC], 5, cpu.registers.getH},
+		{cpu.instructions[0xCBED], 5, cpu.registers.getL},
+		{cpu.instructions[0xCBEF], 5, cpu.registers.getA},
+		{cpu.instructions[0xCBF0], 6, cpu.registers.getB},
+		{cpu.instructions[0xCBF1], 6, cpu.registers.getC},
+		{cpu.instructions[0xCBF2], 6, cpu.registers.getD},
+		{cpu.instructions[0xCBF3], 6, cpu.registers.getE},
+		{cpu.instructions[0xCBF4], 6, cpu.registers.getH},
+		{cpu.instructions[0xCBF5], 6, cpu.registers.getL},
+		{cpu.instructions[0xCBF7], 6, cpu.registers.getA},
+		{cpu.instructions[0xCBF8], 7, cpu.registers.getB},
+		{cpu.instructions[0xCBF9], 7, cpu.registers.getC},
+		{cpu.instructions[0xCBFA], 7, cpu.registers.getD},
+		{cpu.instructions[0xCBFB], 7, cpu.registers.getE},
+		{cpu.instructions[0xCBFC], 7, cpu.registers.getH},
+		{cpu.instructions[0xCBFD], 7, cpu.registers.getL},
+		{cpu.instructions[0xCBFF], 7, cpu.registers.getA},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.To() | (1 << testCase.BitIndex)
-			testCase.Instruction.Exec(&c)
-			value2 := testCase.To()
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			value1 := tc.to() | (1 << tc.bitIndex)
+			tc.instruction.exec(cpu)
+			value2 := tc.to()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	SET n,(HL)
+// SET n,(HL)
 func TestSETInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		BitIndex    int
+		instruction instruction
+		bitIndex    int
 	}{
-		{c.Instructions[0xCBC6], 0},
-		{c.Instructions[0xCBCE], 1},
-		{c.Instructions[0xCBD6], 2},
-		{c.Instructions[0xCBDE], 3},
-		{c.Instructions[0xCBE6], 4},
-		{c.Instructions[0xCBEE], 5},
-		{c.Instructions[0xCBF6], 6},
-		{c.Instructions[0xCBFE], 7},
+		{cpu.instructions[0xCBC6], 0},
+		{cpu.instructions[0xCBCE], 1},
+		{cpu.instructions[0xCBD6], 2},
+		{cpu.instructions[0xCBDE], 3},
+		{cpu.instructions[0xCBE6], 4},
+		{cpu.instructions[0xCBEE], 5},
+		{cpu.instructions[0xCBF6], 6},
+		{cpu.instructions[0xCBFE], 7},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetHL()
-			value1 := c.Memory.Read(addr) | (1 << testCase.BitIndex)
-			testCase.Instruction.Exec(&c)
-			value2 := c.Memory.Read(addr)
-			tests.Equals(t, value1, value2, "Expected 0x%02X, got 0x%02X")
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getHL()
+			value1 := cpu.memory.Read(addr) | (1 << tc.bitIndex)
+			tc.instruction.exec(cpu)
+			value2 := cpu.memory.Read(addr)
+			if value1 != value2 {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, value2)
+			}
 		})
 	}
 }
 
-//	SCF
+// SCF
 func TestSCFInstructions(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x37]},
+		{cpu.instructions[0x37]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			flagN := false
 			flagH := false
 			flagC := true
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			tc.instruction.exec(cpu)
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	CCF
+// CCF
 func TestCCFInstructions(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x3F]},
+		{cpu.instructions[0x3F]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			flagN := false
 			flagH := false
-			flagC := !c.Flags.C
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			flagC := !cpu.registers.f.getC()
+			tc.instruction.exec(cpu)
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	NOP
+// NOP
 func TestNOPInstructions(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x00]},
+		{cpu.instructions[0x00]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			regA := c.Registers.GetA()
-			regF := c.Registers.GetF()
-			regB := c.Registers.GetB()
-			regC := c.Registers.GetC()
-			regD := c.Registers.GetD()
-			regE := c.Registers.GetE()
-			regH := c.Registers.GetH()
-			regL := c.Registers.GetL()
-			regSP := c.Registers.GetSP()
-			regPC := c.Registers.GetPC()
-			flagZ := c.Flags.Z
-			flagN := c.Flags.N
-			flagH := c.Flags.H
-			flagC := c.Flags.C
-			testCase.Instruction.Exec(&c)
-			tests.Equals(t, regA, c.Registers.GetA(), "Reg A. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, regF, c.Registers.GetF(), "Reg F. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, regB, c.Registers.GetB(), "Reg B. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, regC, c.Registers.GetC(), "Reg C. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, regD, c.Registers.GetD(), "Reg D. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, regE, c.Registers.GetE(), "Reg E. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, regH, c.Registers.GetH(), "Reg H. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, regL, c.Registers.GetL(), "Reg L. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, regSP, c.Registers.GetSP(), "Reg SP. Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, regPC, c.Registers.GetPC(), "Reg PC. Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, flagZ, c.Flags.Z, "Flag Z. Expected %t, got %t")
-			tests.Equals(t, flagN, c.Flags.N, "Flag N. Expected %t, got %t")
-			tests.Equals(t, flagH, c.Flags.H, "Flag H. Expected %t, got %t")
-			tests.Equals(t, flagC, c.Flags.C, "Flag C. Expected %t, got %t")
+			randomizeRegisters(cpu.registers)
+			regA := cpu.registers.getA()
+			regF := cpu.registers.getF()
+			regB := cpu.registers.getB()
+			regC := cpu.registers.getC()
+			regD := cpu.registers.getD()
+			regE := cpu.registers.getE()
+			regH := cpu.registers.getH()
+			regL := cpu.registers.getL()
+			regSP := cpu.registers.getSP()
+			regPC := cpu.registers.getPC()
+			flagZ := cpu.registers.f.getZ()
+			flagN := cpu.registers.f.getN()
+			flagH := cpu.registers.f.getH()
+			flagC := cpu.registers.f.getC()
+			tc.instruction.exec(cpu)
+			if regA != cpu.registers.getA() {
+				t.Errorf("Reg A. Expected 0x%02X, got 0x%02X", regA, cpu.registers.getA())
+			}
+			if regF != cpu.registers.getF() {
+				t.Errorf("Reg F. Expected 0x%02X, got 0x%02X", regF, cpu.registers.getF())
+			}
+			if regB != cpu.registers.getB() {
+				t.Errorf("Reg B. Expected 0x%02X, got 0x%02X", regB, cpu.registers.getB())
+			}
+			if regC != cpu.registers.getC() {
+				t.Errorf("Reg C. Expected 0x%02X, got 0x%02X", regC, cpu.registers.getC())
+			}
+			if regD != cpu.registers.getD() {
+				t.Errorf("Reg D. Expected 0x%02X, got 0x%02X", regD, cpu.registers.getD())
+			}
+			if regE != cpu.registers.getE() {
+				t.Errorf("Reg E. Expected 0x%02X, got 0x%02X", regE, cpu.registers.getE())
+			}
+			if regH != cpu.registers.getH() {
+				t.Errorf("Reg H. Expected 0x%02X, got 0x%02X", regH, cpu.registers.getH())
+			}
+			if regL != cpu.registers.getL() {
+				t.Errorf("Reg L. Expected 0x%02X, got 0x%02X", regL, cpu.registers.getL())
+			}
+			if regSP != cpu.registers.getSP() {
+				t.Errorf("Reg SP. Expected 0x%04X, got 0x%04X", regSP, cpu.registers.getSP())
+			}
+			if regPC != cpu.registers.getPC() {
+				t.Errorf("Reg PC. Expected 0x%04X, got 0x%04X", regPC, cpu.registers.getPC())
+			}
+			if flagZ != cpu.registers.f.getZ() {
+				t.Errorf("Flag Z. Expected %t, got %t", flagZ, cpu.registers.f.getZ())
+			}
+			if flagN != cpu.registers.f.getN() {
+				t.Errorf("Flag N. Expected %t, got %t", flagN, cpu.registers.f.getN())
+			}
+			if flagH != cpu.registers.f.getH() {
+				t.Errorf("Flag H. Expected %t, got %t", flagH, cpu.registers.f.getH())
+			}
+			if flagC != cpu.registers.f.getC() {
+				t.Errorf("Flag C. Expected %t, got %t", flagC, cpu.registers.f.getC())
+			}
 		})
 	}
 }
 
-//	JP nn
+// JP nn
 func TestJPInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xC3]},
+		{cpu.instructions[0xC3]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetPC()
-			msb := uint16(c.Memory.Read(addr + 1))
-			lsb := uint16(c.Memory.Read(addr))
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getPC()
+			msb := uint16(cpu.memory.Read(addr + 1))
+			lsb := uint16(cpu.memory.Read(addr))
 			value1 := msb<<8 | lsb
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	JP HL
+// JP HL
 func TestJPInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xE9]},
+		{cpu.instructions[0xE9]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := c.Registers.GetHL()
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
+			randomizeRegisters(cpu.registers)
+			value1 := cpu.registers.getHL()
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	JP !c,nn
+// JP !c,nn
 func TestJPInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Flag        func() bool
+		instruction instruction
+		flag        func() bool
 	}{
-		{c.Instructions[0xC2], c.Flags.GetZ},
-		{c.Instructions[0xD2], c.Flags.GetC},
+		{cpu.instructions[0xC2], cpu.registers.f.getZ},
+		{cpu.instructions[0xD2], cpu.registers.f.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			var value1 uint16
-			addr := c.Registers.GetPC()
-			msb := uint16(c.Memory.Read(addr + 1))
-			lsb := uint16(c.Memory.Read(addr))
-			if !testCase.Flag() {
+			addr := cpu.registers.getPC()
+			msb := uint16(cpu.memory.Read(addr + 1))
+			lsb := uint16(cpu.memory.Read(addr))
+			if !tc.flag() {
 				value1 = msb<<8 | lsb
 			} else {
-				value1 = c.Registers.GetPC() + 2
+				value1 = cpu.registers.getPC() + 2
 			}
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	JP f,nn
+// JP f,nn
 func TestJPInstructions4(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Flag        func() bool
+		instruction instruction
+		flag        func() bool
 	}{
-		{c.Instructions[0xCA], c.Flags.GetZ},
-		{c.Instructions[0xDA], c.Flags.GetC},
+		{cpu.instructions[0xCA], cpu.registers.f.getZ},
+		{cpu.instructions[0xDA], cpu.registers.f.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			var value1 uint16
-			addr := c.Registers.GetPC()
-			msb := uint16(c.Memory.Read(addr + 1))
-			lsb := uint16(c.Memory.Read(addr))
-			if testCase.Flag() {
+			addr := cpu.registers.getPC()
+			msb := uint16(cpu.memory.Read(addr + 1))
+			lsb := uint16(cpu.memory.Read(addr))
+			if tc.flag() {
 				value1 = msb<<8 | lsb
 			} else {
-				value1 = c.Registers.GetPC() + 2
+				value1 = cpu.registers.getPC() + 2
 			}
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	JR e
+// JR e
 func TestJRInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0x18]},
+		{cpu.instructions[0x18]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			pc := int(c.Registers.GetPC())
-			e := int(int8(tests.Read8BitOperand(&c)))
+			randomizeRegisters(cpu.registers)
+			pc := int(cpu.registers.getPC())
+			e := int(int8(read8BitOperand(cpu)))
 			value1 := uint16(pc + e)
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	JR !c,nn
+// JR !c,nn
 func TestJRInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Flag        func() bool
+		instruction instruction
+		flag        func() bool
 	}{
-		{c.Instructions[0x20], c.Flags.GetZ},
-		{c.Instructions[0x30], c.Flags.GetC},
+		{cpu.instructions[0x20], cpu.registers.f.getZ},
+		{cpu.instructions[0x30], cpu.registers.f.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
 			var value1 uint16
-			tests.RandRegisters(&c)
-			pc := int(c.Registers.GetPC())
-			e := int(int8(tests.Read8BitOperand(&c)))
-			if !testCase.Flag() {
+			randomizeRegisters(cpu.registers)
+			pc := int(cpu.registers.getPC())
+			e := int(int8(read8BitOperand(cpu)))
+			if !tc.flag() {
 				value1 = uint16(pc + e)
 			} else {
-				value1 = c.Registers.GetPC() + 1
+				value1 = cpu.registers.getPC() + 1
 			}
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	JR f,e
+// JR f,e
 func TestJRInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Flag        func() bool
+		instruction instruction
+		flag        func() bool
 	}{
-		{c.Instructions[0x28], c.Flags.GetZ},
-		{c.Instructions[0x38], c.Flags.GetC},
+		{cpu.instructions[0x28], cpu.registers.f.getZ},
+		{cpu.instructions[0x38], cpu.registers.f.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
 			var value1 uint16
-			tests.RandRegisters(&c)
-			pc := int(c.Registers.GetPC())
-			e := int(int8(tests.Read8BitOperand(&c)))
-			if testCase.Flag() {
+			randomizeRegisters(cpu.registers)
+			pc := int(cpu.registers.getPC())
+			e := int(int8(read8BitOperand(cpu)))
+			if tc.flag() {
 				value1 = uint16(pc + e)
 			} else {
-				value1 = c.Registers.GetPC() + 1
+				value1 = cpu.registers.getPC() + 1
 			}
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, value1, value2, "Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if value1 != value2 {
+				t.Errorf("Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	CALL nn
+// CALL nn
 func TestCALLInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xCD]},
+		{cpu.instructions[0xCD]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := tests.Read16BitOperand(&c)
-			addr := c.Registers.GetSP()
-			msb := uint8((c.Registers.GetPC() + 2) >> 8)
-			lsb := uint8((c.Registers.GetPC() + 2) & 0xFF)
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, msb, c.Memory.Read(addr-1), "SP-1. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, lsb, c.Memory.Read(addr-2), "SP-2. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, addr-2, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, value1, value2, "PC. Expected 0x%04X, got 0x%04X")
+			randomizeRegisters(cpu.registers)
+			value1 := read16BitOperand(cpu)
+			addr := cpu.registers.getSP()
+			if addr == controllers.ADDR_DIV_COUNTER+1 || addr == controllers.ADDR_DIV_COUNTER+2 { // writing to 0xFF04 does nothing; skip
+				return
+			}
+			msb := uint8((cpu.registers.getPC() + 2) >> 8)
+			lsb := uint8((cpu.registers.getPC() + 2) & 0xFF)
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if msb != cpu.memory.Read(addr-1) {
+				t.Errorf("SP-1. Expected 0x%02X, got 0x%02X", msb, cpu.memory.Read(addr-1))
+			}
+			if lsb != cpu.memory.Read(addr-2) {
+				t.Errorf("SP-2. Expected 0x%02X, got 0x%02X", lsb, cpu.memory.Read(addr-2))
+			}
+			if addr-2 != cpu.registers.getSP() {
+				t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr-2, cpu.registers.getSP())
+			}
+			if value1 != value2 {
+				t.Errorf("PC. Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	CALL !f, nn
+// CALL !f, nn
 func TestCALLInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Flag        func() bool
+		instruction instruction
+		flag        func() bool
 	}{
-		{c.Instructions[0xC4], c.Flags.GetZ},
-		{c.Instructions[0xD4], c.Flags.GetC},
+		{cpu.instructions[0xC4], cpu.registers.f.getZ},
+		{cpu.instructions[0xD4], cpu.registers.f.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			var value1 uint16
 			var msb, lsb uint8
-			addr := c.Registers.GetSP()
-			if !testCase.Flag() {
-				value1 = tests.Read16BitOperand(&c)
-				msb = uint8((c.Registers.GetPC() + 2) >> 8)
-				lsb = uint8((c.Registers.GetPC() + 2) & 0xFF)
-			} else {
-				value1 = c.Registers.GetPC() + 2
-				msb = c.Memory.Read(addr - 1)
-				lsb = c.Memory.Read(addr - 2)
+			addr := cpu.registers.getSP()
+			if addr == controllers.ADDR_DIV_COUNTER+1 || addr == controllers.ADDR_DIV_COUNTER+2 { // writing to 0xFF04 does nothing; skip
+				return
 			}
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			if !testCase.Flag() {
-				tests.Equals(t, addr-2, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
+			if !tc.flag() {
+				value1 = read16BitOperand(cpu)
+				msb = uint8((cpu.registers.getPC() + 2) >> 8)
+				lsb = uint8((cpu.registers.getPC() + 2) & 0xFF)
 			} else {
-				tests.Equals(t, addr, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
+				value1 = cpu.registers.getPC() + 2
+				msb = cpu.memory.Read(addr - 1)
+				lsb = cpu.memory.Read(addr - 2)
 			}
-			tests.Equals(t, msb, c.Memory.Read(addr-1), "SP-1. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, lsb, c.Memory.Read(addr-2), "SP-2. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, value1, value2, "PC. Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if !tc.flag() {
+				if addr-2 != cpu.registers.getSP() {
+					t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr-2, cpu.registers.getSP())
+				}
+			} else {
+				if addr != cpu.registers.getSP() {
+					t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr, cpu.registers.getSP())
+				}
+			}
+			if msb != cpu.memory.Read(addr-1) {
+				t.Errorf("SP-1. Expected 0x%02X, got 0x%02X", msb, cpu.memory.Read(addr-1))
+			}
+			if lsb != cpu.memory.Read(addr-2) {
+				t.Errorf("SP-2. Expected 0x%02X, got 0x%02X", lsb, cpu.memory.Read(addr-2))
+			}
+			if value1 != value2 {
+				t.Errorf("PC. Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	CALL f, nn
+// CALL f, nn
 func TestCALLInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Flag        func() bool
+		instruction instruction
+		flag        func() bool
 	}{
-		{c.Instructions[0xCC], c.Flags.GetZ},
-		{c.Instructions[0xDC], c.Flags.GetC},
+		{cpu.instructions[0xCC], cpu.registers.f.getZ},
+		{cpu.instructions[0xDC], cpu.registers.f.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			var value1 uint16
 			var msb, lsb uint8
-			addr := c.Registers.GetSP()
-			if testCase.Flag() {
-				value1 = tests.Read16BitOperand(&c)
-				msb = uint8((c.Registers.GetPC() + 2) >> 8)
-				lsb = uint8((c.Registers.GetPC() + 2) & 0xFF)
-			} else {
-				value1 = c.Registers.GetPC() + 2
-				msb = c.Memory.Read(addr - 1)
-				lsb = c.Memory.Read(addr - 2)
+			addr := cpu.registers.getSP()
+			if addr == controllers.ADDR_DIV_COUNTER+1 || addr == controllers.ADDR_DIV_COUNTER+2 { // writing to 0xFF04 does nothing; skip
+				return
 			}
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			if testCase.Flag() {
-				tests.Equals(t, addr-2, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
+			if tc.flag() {
+				value1 = read16BitOperand(cpu)
+				msb = uint8((cpu.registers.getPC() + 2) >> 8)
+				lsb = uint8((cpu.registers.getPC() + 2) & 0xFF)
 			} else {
-				tests.Equals(t, addr, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
+				value1 = cpu.registers.getPC() + 2
+				msb = cpu.memory.Read(addr - 1)
+				lsb = cpu.memory.Read(addr - 2)
 			}
-			tests.Equals(t, msb, c.Memory.Read(addr-1), "SP-1. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, lsb, c.Memory.Read(addr-2), "SP-2. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, value1, value2, "PC. Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if tc.flag() {
+				if addr-2 != cpu.registers.getSP() {
+					t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr-2, cpu.registers.getSP())
+				}
+			} else {
+				if addr != cpu.registers.getSP() {
+					t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr, cpu.registers.getSP())
+				}
+			}
+			if msb != cpu.memory.Read(addr-1) {
+				t.Errorf("SP-1. Expected 0x%02X, got 0x%02X", msb, cpu.memory.Read(addr-1))
+			}
+			if lsb != cpu.memory.Read(addr-2) {
+				t.Errorf("SP-2. Expected 0x%02X, got 0x%02X", lsb, cpu.memory.Read(addr-2))
+			}
+			if value1 != value2 {
+				t.Errorf("PC. Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	RET
+// RET
 func TestRETInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xC9]},
+		{cpu.instructions[0xC9]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetSP()
-			msb := uint16(c.Memory.Read(addr + 1))
-			lsb := uint16(c.Memory.Read(addr))
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getSP()
+			msb := uint16(cpu.memory.Read(addr + 1))
+			lsb := uint16(cpu.memory.Read(addr))
 			value1 := msb<<8 | lsb
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, uint8(msb), c.Memory.Read(addr+1), "SP-1. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, uint8(lsb), c.Memory.Read(addr), "SP-2. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, addr+2, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, value1, value2, "PC. Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if uint8(msb) != cpu.memory.Read(addr+1) {
+				t.Errorf("SP-1. Expected 0x%02X, got 0x%02X", uint8(msb), cpu.memory.Read(addr+1))
+			}
+			if uint8(lsb) != cpu.memory.Read(addr) {
+				t.Errorf("SP-2. Expected 0x%02X, got 0x%02X", uint8(lsb), cpu.memory.Read(addr))
+			}
+			if addr+2 != cpu.registers.getSP() {
+				t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr+2, cpu.registers.getSP())
+			}
+			if value1 != value2 {
+				t.Errorf("PC. Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	RET !f
+// RET !f
 func TestRETInstructions2(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Flag        func() bool
+		instruction instruction
+		flag        func() bool
 	}{
-		{c.Instructions[0xC0], c.Flags.GetZ},
-		{c.Instructions[0xD0], c.Flags.GetC},
+		{cpu.instructions[0xC0], cpu.registers.f.getZ},
+		{cpu.instructions[0xD0], cpu.registers.f.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			var value1 uint16
-			addr := c.Registers.GetSP()
-			if !testCase.Flag() {
-				msb := uint16(c.Memory.Read(addr + 1))
-				lsb := uint16(c.Memory.Read(addr))
+			addr := cpu.registers.getSP()
+			if !tc.flag() {
+				msb := uint16(cpu.memory.Read(addr + 1))
+				lsb := uint16(cpu.memory.Read(addr))
 				value1 = msb<<8 | lsb
 			} else {
-				value1 = c.Registers.GetPC()
+				value1 = cpu.registers.getPC()
 			}
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			if !testCase.Flag() {
-				tests.Equals(t, addr+2, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if !tc.flag() {
+				if addr+2 != cpu.registers.getSP() {
+					t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr+2, cpu.registers.getSP())
+				}
 			} else {
-				tests.Equals(t, addr, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
+				if addr != cpu.registers.getSP() {
+					t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr, cpu.registers.getSP())
+				}
 			}
-			tests.Equals(t, value1, value2, "PC. Expected 0x%04X, got 0x%04X")
+			if value1 != value2 {
+				t.Errorf("PC. Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	RET f
+// RET f
 func TestRETInstructions3(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Flag        func() bool
+		instruction instruction
+		flag        func() bool
 	}{
-		{c.Instructions[0xC8], c.Flags.GetZ},
-		{c.Instructions[0xD8], c.Flags.GetC},
+		{cpu.instructions[0xC8], cpu.registers.f.getZ},
+		{cpu.instructions[0xD8], cpu.registers.f.getC},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
+			randomizeRegisters(cpu.registers)
 			var value1 uint16
-			addr := c.Registers.GetSP()
-			if testCase.Flag() {
-				msb := uint16(c.Memory.Read(addr + 1))
-				lsb := uint16(c.Memory.Read(addr))
+			addr := cpu.registers.getSP()
+			if tc.flag() {
+				msb := uint16(cpu.memory.Read(addr + 1))
+				lsb := uint16(cpu.memory.Read(addr))
 				value1 = msb<<8 | lsb
 			} else {
-				value1 = c.Registers.GetPC()
+				value1 = cpu.registers.getPC()
 			}
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			if testCase.Flag() {
-				tests.Equals(t, addr+2, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if tc.flag() {
+				if addr+2 != cpu.registers.getSP() {
+					t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr+2, cpu.registers.getSP())
+				}
 			} else {
-				tests.Equals(t, addr, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
+				if addr != cpu.registers.getSP() {
+					t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr, cpu.registers.getSP())
+				}
 			}
-			tests.Equals(t, value1, value2, "PC. Expected 0x%04X, got 0x%04X")
+			if value1 != value2 {
+				t.Errorf("PC. Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
 	}
 }
 
-//	RETI
+// RETI
 func TestRETInstructions4(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	interrupts := controllers.NewInterrupts(memory)
+	cpu := NewCPU(memory, interrupts, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
+		instruction instruction
 	}{
-		{c.Instructions[0xD9]},
+		{cpu.instructions[0xD9]},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			addr := c.Registers.GetSP()
-			msb := uint16(c.Memory.Read(addr + 1))
-			lsb := uint16(c.Memory.Read(addr))
+			randomizeRegisters(cpu.registers)
+			addr := cpu.registers.getSP()
+			msb := uint16(cpu.memory.Read(addr + 1))
+			lsb := uint16(cpu.memory.Read(addr))
 			value1 := msb<<8 | lsb
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, uint8(msb), c.Memory.Read(addr+1), "SP-1. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, uint8(lsb), c.Memory.Read(addr), "SP-2. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, addr+2, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, value1, value2, "PC. Expected 0x%04X, got 0x%04X")
-			// Test if Interrupt flag enabled
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if uint8(msb) != cpu.memory.Read(addr+1) {
+				t.Errorf("SP-1. Expected 0x%02X, got 0x%02X", uint8(msb), cpu.memory.Read(addr+1))
+			}
+			if uint8(lsb) != cpu.memory.Read(addr) {
+				t.Errorf("SP-2. Expected 0x%02X, got 0x%02X", uint8(lsb), cpu.memory.Read(addr))
+			}
+			if addr+2 != cpu.registers.getSP() {
+				t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr+2, cpu.registers.getSP())
+			}
+			if value1 != value2 {
+				t.Errorf("PC. Expected 0x%04X, got 0x%04X", value1, value2)
+			}
+			if true != cpu.interrupts.IsMasterEnabled() {
+				t.Errorf("Master disabled after RETI. Expected %v, got %v", true, cpu.interrupts.IsMasterEnabled())
+			}
 		})
 	}
 }
 
-//	RST h
+// RST h
 func TestRSTInstructions1(t *testing.T) {
-	c := tests.InitCPU()
+	memory := memory.NewDMGMemory()
+	cpu := NewCPU(memory, nil, nil, nil, nil)
+
+	randomizeMemory(memory)
+
 	instructions := []struct {
-		Instruction cpu.Instruction
-		Vector      uint16
+		instruction instruction
+		vector      uint16
 	}{
-		{c.Instructions[0xC7], 0x00},
-		{c.Instructions[0xCF], 0x08},
-		{c.Instructions[0xD7], 0x10},
-		{c.Instructions[0xDF], 0x18},
-		{c.Instructions[0xE7], 0x20},
-		{c.Instructions[0xEF], 0x28},
-		{c.Instructions[0xF7], 0x30},
-		{c.Instructions[0xFF], 0x38},
+		{cpu.instructions[0xC7], 0x00},
+		{cpu.instructions[0xCF], 0x08},
+		{cpu.instructions[0xD7], 0x10},
+		{cpu.instructions[0xDF], 0x18},
+		{cpu.instructions[0xE7], 0x20},
+		{cpu.instructions[0xEF], 0x28},
+		{cpu.instructions[0xF7], 0x30},
+		{cpu.instructions[0xFF], 0x38},
 	}
-	for _, testCase := range instructions {
-		testName := fmt.Sprintf("Executes %s", testCase.Instruction.Mnemonic)
+	for _, tc := range instructions {
+		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
-			tests.RandRegisters(&c)
-			value1 := testCase.Vector
-			addr := c.Registers.GetSP()
-			msb := uint8(c.Registers.GetPC() >> 8)
-			lsb := uint8(c.Registers.GetPC() & 0xFF)
-			testCase.Instruction.Exec(&c)
-			value2 := c.Registers.GetPC()
-			tests.Equals(t, msb, c.Memory.Read(addr-1), "SP-1. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, lsb, c.Memory.Read(addr-2), "SP-2. Expected 0x%02X, got 0x%02X")
-			tests.Equals(t, addr-2, c.Registers.GetSP(), "SP. Expected 0x%04X, got 0x%04X")
-			tests.Equals(t, value1, value2, "PC. Expected 0x%04X, got 0x%04X")
+			randomizeRegisters(cpu.registers)
+			value1 := tc.vector
+			addr := cpu.registers.getSP()
+			if addr == controllers.ADDR_DIV_COUNTER+1 || addr == controllers.ADDR_DIV_COUNTER+2 { // writing to 0xFF04 does nothing; skip
+				return
+			}
+			msb := uint8(cpu.registers.getPC() >> 8)
+			lsb := uint8(cpu.registers.getPC() & 0xFF)
+			tc.instruction.exec(cpu)
+			value2 := cpu.registers.getPC()
+			if msb != cpu.memory.Read(addr-1) {
+				t.Errorf("SP-1. Expected 0x%02X, got 0x%02X", msb, cpu.memory.Read(addr-1))
+			}
+			if lsb != cpu.memory.Read(addr-2) {
+				t.Errorf("SP-2. Expected 0x%02X, got 0x%02X", lsb, cpu.memory.Read(addr-2))
+			}
+			if addr-2 != cpu.registers.getSP() {
+				t.Errorf("SP. Expected 0x%04X, got 0x%04X", addr-2, cpu.registers.getSP())
+			}
+			if value1 != value2 {
+				t.Errorf("PC. Expected 0x%04X, got 0x%04X", value1, value2)
+			}
 		})
+	}
+}
+
+// TODO(somerussianlad) Finish these tests
+// DI
+func TestDI(t *testing.T) {
+	memory := memory.NewDMGMemory()
+	interrupts := controllers.NewInterrupts(memory)
+	cpu := NewCPU(memory, interrupts, nil, nil, nil)
+
+	interrupts.EnableMaster()
+	cpu.instructions[0xF3].exec(cpu)
+
+	expectedMaster := false
+	expectedDelay := false
+	gotMaster := interrupts.IsMasterEnabled()
+	gotDelay := interrupts.IsDelayed()
+
+	if expectedMaster != gotMaster {
+		t.Errorf("Wrong master value. Expected %v, got %v", expectedMaster, gotMaster)
+	}
+	if expectedDelay != gotDelay {
+		t.Errorf("Wrong master value. Expected %v, got %v", expectedMaster, gotMaster)
+	}
+}
+
+// EI
+func TestEI(t *testing.T) {
+	memory := memory.NewDMGMemory()
+	interrupts := controllers.NewInterrupts(memory)
+	cpu := NewCPU(memory, interrupts, nil, nil, nil)
+
+	interrupts.DisableMaster()
+	cpu.instructions[0xFB].exec(cpu)
+
+	expectedMaster := true
+	expectedDelay := true
+	gotMaster := interrupts.IsMasterEnabled()
+	gotDelay := interrupts.IsDelayed()
+
+	if expectedMaster != gotMaster {
+		t.Errorf("Wrong master value. Expected %v, got %v", expectedMaster, gotMaster)
+	}
+	if expectedDelay != gotDelay {
+		t.Errorf("Wrong master value. Expected %v, got %v", expectedMaster, gotMaster)
 	}
 }
