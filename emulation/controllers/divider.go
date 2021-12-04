@@ -45,7 +45,7 @@ func (d *Divider) counterGetter() func() uint8 {
 }
 
 func (d *Divider) counterSetter() func(uint8) {
-	return func(v uint8) {
+	return func(value uint8) {
 		d.counter = 0
 	}
 }
