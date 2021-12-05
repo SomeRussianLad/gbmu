@@ -90,7 +90,7 @@ func (t *Timer) getClock() int {
 	return timerClock[t.control&3]
 }
 
-// getThreshold returns the amount of machine cycles, after reaching which the timer counter must be increased
+// getThreshold returns the amount of machine cycles, after reaching which the timer counter must be incremented
 func (t *Timer) getThreshold() int {
 	return timerThreshold[t.getClock()]
 }
@@ -115,7 +115,7 @@ func (t *Timer) controllerGetter() func() uint8 {
 
 func (t *Timer) counterSetter() func(uint8) {
 	return func(value uint8) {
-		t.counter = 0
+		t.counter = value
 	}
 }
 
