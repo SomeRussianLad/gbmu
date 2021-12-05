@@ -78,6 +78,29 @@ func TestMasterSetters(t *testing.T) {
 	}
 }
 
+func TestDelay(t *testing.T) {
+	memory := memory.NewDMGMemory()
+	interrupts := NewInterrupts(memory)
+
+	testCases := []struct {
+		f     func()
+		delay bool
+	}{
+		{interrupts.EnableDelay, true},
+	}
+
+	for _, tc := range testCases {
+		tc.f()
+
+		expectedDelay := tc.delay
+		gotDelay := interrupts.delay
+
+		if expectedDelay != gotDelay {
+			t.Errorf("Wrong delay value. Expected %v, got %v", expectedDelay, gotDelay)
+		}
+	}
+}
+
 func TestRequest(t *testing.T) {
 	memory := memory.NewDMGMemory()
 	interrupts := NewInterrupts(memory)

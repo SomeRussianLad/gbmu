@@ -8,50 +8,228 @@ import (
 	"gbmu/emulation/memory"
 )
 
-// TODO(somerussianlad) Add tests for cases, in which TAC is changed at random
+const NUM_OF_INSTRUCTIONS = (1 << 22)
 
 func TestTimerUpdate(t *testing.T) {
-	memory := memory.NewDMGMemory()
-	interrupts := NewInterrupts(memory)
-	timer := NewTimer(memory, interrupts.Request)
-
-	testCases := []struct {
-		cycles int
-	}{}
-
 	rand.Seed(time.Now().UTC().UnixNano())
-	for i := 0; i < (1 << 22); i++ {
-		testCases = append(testCases, struct{ cycles int }{(rand.Intn(5) + 1) * 4})
-	}
 
-	for _, i := range []uint8{0, 1, 2, 3} {
-		var cyclesSum int
+	testName := "Checks whether inner cycle counter increments properly, when timer is disabled"
+	t.Run(testName, func(t *testing.T) {
+		memory := memory.NewDMGMemory()
+		interrupts := NewInterrupts(memory)
+		timer := NewTimer(memory, interrupts.Request)
 
-		timer.counter = 0
-		timer.control |= i
-		timer.control |= 4
-		timer.cycles = 0
+		for i := 0; i < NUM_OF_INSTRUCTIONS; i++ {
+			cycles := (rand.Intn(6) + 1) * 4
 
-		testName := "Checks whether counter increments properly with different clock settings"
-		t.Run(testName, func(t *testing.T) {
-			for _, tc := range testCases {
-				timer.Update(tc.cycles)
-				cyclesSum += tc.cycles
+			timer.Update(cycles)
 
-				expectedCounter := uint8(cyclesSum / timer.getThreshold())
-				gotCounter := timer.counter
+			expectedCycles := 0
+			gotCycles := timer.cycles
 
-				if expectedCounter != gotCounter {
-					t.Errorf("Timer increments incorrectly. Expected 0x%04X, got 0x%04X", expectedCounter, gotCounter)
-					t.Logf("Machine cycles: %v", cyclesSum)
-					t.Logf("Threshold: %v", timer.getThreshold())
-					// t.Logf("Clock: %v", timerClock[i])
-					t.Logf("Counter: %v", timer.counter)
+			if expectedCycles != gotCycles {
+				t.Errorf("Inner cycle counter increments, when timer is disabled. Expected %v, got %v", expectedCycles, gotCycles)
+				break
+			}
+		}
+	})
+
+	testName = "Checks whether inner cycle counter increments properly, when timer is enabled"
+	t.Run(testName, func(t *testing.T) {
+		memory := memory.NewDMGMemory()
+		interrupts := NewInterrupts(memory)
+
+		for _, c := range []uint8{0, 1, 2, 3} {
+			var cyclesSum int
+
+			timer := NewTimer(memory, interrupts.Request)
+			memory.Write(ADDR_TIM_CONTROL, 4|c)
+			threshold := timer.getThreshold()
+
+			for i := 0; i < NUM_OF_INSTRUCTIONS; i++ {
+				cycles := (rand.Intn(6) + 1) * 4
+				cyclesSum += cycles
+
+				timer.Update(cycles)
+
+				expectedCycles := cyclesSum % threshold
+				gotCycles := timer.cycles
+
+				if expectedCycles != gotCycles {
+					t.Errorf("Inner cycle counter stores incorrect value. Expected %v, got %v", expectedCycles, gotCycles)
 					break
 				}
 			}
-		})
-	}
+		}
+	})
+
+	testName = "Checks whether inner cycle counter increments and resets properly, when timer is enabled and TAC is changed at random points"
+	t.Run(testName, func(t *testing.T) {
+		memory := memory.NewDMGMemory()
+		interrupts := NewInterrupts(memory)
+
+		for _, c := range []uint8{0, 1, 2, 3} {
+			var cyclesSum int
+
+			timer := NewTimer(memory, interrupts.Request)
+			memory.Write(ADDR_TIM_CONTROL, 4|c)
+			threshold := timer.getThreshold()
+
+			for i := 0; i < NUM_OF_INSTRUCTIONS; i++ {
+				if rand.Int()%(1<<10) == 0 {
+					cyclesSum = 0
+					memory.Write(ADDR_TIM_CONTROL, uint8(rand.Int())|4)
+					threshold = timer.getThreshold()
+				}
+
+				cycles := (rand.Intn(6) + 1) * 4
+				cyclesSum += cycles
+
+				timer.Update(cycles)
+
+				expectedCycles := cyclesSum % threshold
+				gotCycles := timer.cycles
+
+				if expectedCycles != gotCycles {
+					t.Errorf("Inner cycle counter stores incorrect value. Expected %v, got %v", expectedCycles, gotCycles)
+					break
+				}
+			}
+		}
+	})
+
+	testName = "Checks whether counter increments properly, when timer is disabled"
+	t.Run(testName, func(t *testing.T) {
+		memory := memory.NewDMGMemory()
+		interrupts := NewInterrupts(memory)
+		timer := NewTimer(memory, interrupts.Request)
+
+		for i := 0; i < NUM_OF_INSTRUCTIONS; i++ {
+			cycles := (rand.Intn(6) + 1) * 4
+
+			timer.Update(cycles)
+
+			expectedCounter := uint8(0)
+			gotCounter := timer.counter
+
+			if expectedCounter != gotCounter {
+				t.Errorf("Counter increments, when timer is disabled. Expected %v, got %v", expectedCounter, gotCounter)
+				break
+			}
+		}
+	})
+
+	testName = "Checks whether counter increments properly, when timer is enabled"
+	t.Run(testName, func(t *testing.T) {
+		memory := memory.NewDMGMemory()
+		interrupts := NewInterrupts(memory)
+
+		for _, c := range []uint8{0, 1, 2, 3} {
+			var cyclesSum int
+
+			timer := NewTimer(memory, interrupts.Request)
+			memory.Write(ADDR_TIM_CONTROL, 4|c)
+			threshold := timer.getThreshold()
+
+			for i := 0; i < NUM_OF_INSTRUCTIONS; i++ {
+				cycles := (rand.Intn(6) + 1) * 4
+				cyclesSum += cycles
+
+				timer.Update(cycles)
+
+				expectedCounter := uint8(cyclesSum / threshold)
+				gotCounter := timer.counter
+
+				if expectedCounter != gotCounter {
+					t.Errorf("Counter stores incorrect value. Expected %v, got %v", expectedCounter, gotCounter)
+					break
+				}
+			}
+		}
+	})
+
+	testName = "Checks whether counter increments properly, when timer is enabled and TAC is changed at random points"
+	t.Run(testName, func(t *testing.T) {
+		memory := memory.NewDMGMemory()
+		interrupts := NewInterrupts(memory)
+
+		for _, c := range []uint8{0, 1, 2, 3} {
+			var cyclesSum int
+			var oldCounter uint8
+
+			timer := NewTimer(memory, interrupts.Request)
+			memory.Write(ADDR_TIM_CONTROL, 4|c)
+			threshold := timer.getThreshold()
+
+			for i := 0; i < NUM_OF_INSTRUCTIONS; i++ {
+				if rand.Int()%(1<<10) == 0 {
+					cyclesSum = 0
+					oldCounter = timer.counter
+					memory.Write(ADDR_TIM_CONTROL, uint8(rand.Int())|4)
+					threshold = timer.getThreshold()
+				}
+
+				cycles := (rand.Intn(6) + 1) * 4
+				cyclesSum += cycles
+
+				timer.Update(cycles)
+
+				expectedCounter := uint8(cyclesSum/threshold) + oldCounter
+				gotCounter := timer.counter
+
+				if expectedCounter != gotCounter {
+					t.Errorf("Counter stores incorrect value. Expected %v, got %v", expectedCounter, gotCounter)
+					break
+				}
+			}
+		}
+	})
+
+	testName = "Checks whether counter resets properly"
+	t.Run(testName, func(t *testing.T) {
+		for _, c := range []uint8{0, 1, 2, 3} {
+			for m := uint8(0); m < 0xFF; m++ {
+				memory := memory.NewDMGMemory()
+				interrupts := NewInterrupts(memory)
+				timer := NewTimer(memory, interrupts.Request)
+
+				timer.modulo = m
+				memory.Write(ADDR_TIM_CONTROL, 4|c)
+
+				for i := 0; i < NUM_OF_INSTRUCTIONS; i++ {
+					cycles := (rand.Intn(6) + 1) * 4
+
+					timer.Update(cycles)
+
+					if (interrupts.requested & INT_TIMER) == INT_TIMER {
+						expectedCounter := m + func() uint8 {
+							if timer.counter == timer.modulo {
+								return 0
+							}
+							if timerClock[timer.control&3] == TIM_CLOCK_1 {
+								if timer.cycles == 0 && cycles == 24 {
+									return 1
+								}
+								if timer.cycles == 0 && cycles == 20 {
+									return 1
+								}
+								if timer.cycles == 4 && cycles == 24 {
+									return 1
+								}
+							}
+							return 0
+						}()
+						gotCounter := timer.counter
+
+						if expectedCounter != gotCounter {
+							t.Errorf("Counter stores incorrect value with preset TMA. Expected %v, got %v", expectedCounter, gotCounter)
+						}
+						break
+					}
+				}
+			}
+		}
+	})
 }
 
 func TestRequestInterrupt(t *testing.T) {
@@ -248,7 +426,7 @@ func TestTimerHandlers(t *testing.T) {
 			memory.Write(ADDR_TIM_MODULO, tc.value)
 			memory.Write(ADDR_TIM_CONTROL, tc.value)
 
-			expectedCounter := uint8(0) // Writing to TIMA(0xFF05) resets it
+			expectedCounter := tc.value
 			expectedModulo := tc.value
 			expectedController := tc.value
 			gotCounter := timer.counter
@@ -277,7 +455,7 @@ func TestTimerHandlers(t *testing.T) {
 			memory.Write(ADDR_TIM_MODULO, tc.value)
 			memory.Write(ADDR_TIM_CONTROL, tc.value)
 
-			expectedCounter := uint8(0) // Writing to TIMA(0xFF05) resets it
+			expectedCounter := tc.value
 			expectedModulo := tc.value
 			expectedController := tc.value
 			gotCounter := memory.Read(ADDR_TIM_COUNTER)

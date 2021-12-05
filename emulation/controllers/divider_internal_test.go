@@ -17,8 +17,8 @@ func TestDividerUpdate(t *testing.T) {
 	}{}
 
 	rand.Seed(time.Now().UTC().UnixNano())
-	for i := 0; i < (1 << 18); i++ {
-		testCases = append(testCases, struct{ cycles int }{(rand.Intn(5) + 1) * 4})
+	for i := 0; i < (1 << 22); i++ {
+		testCases = append(testCases, struct{ cycles int }{(rand.Intn(6) + 1) * 4})
 	}
 
 	var cyclesSum int

@@ -25,7 +25,7 @@ func TestDMAUpdate(t *testing.T) {
 
 	rand.Seed(time.Now().UTC().UnixNano())
 	for i := 0; i < (1 << 8); i++ {
-		testCases = append(testCases, struct{ cycles int }{(rand.Intn(5) + 1) * 4})
+		testCases = append(testCases, struct{ cycles int }{(rand.Intn(6) + 1) * 4})
 	}
 
 	t.Run("Checks whether update works properly when DMA is NOT launched", func(t *testing.T) {
