@@ -627,7 +627,7 @@ func (c *CPU) instruction07() {
 }
 
 func (c *CPU) instruction08() {
-	addr := c.read16BitOperand()
+	addr := swapBytes(c.read16BitOperand())
 	lsb := uint8(c.registers.getSP() & 0xFF)
 	msb := uint8(c.registers.getSP() >> 8)
 	c.memory.Write(addr, lsb)
