@@ -84,7 +84,7 @@ func TestGetCarry(t *testing.T) {
 		for _, tc := range testCases {
 			cpu.registers.f.setValue(tc.value)
 
-			expectedValue := (tc.value >> 4) & 1
+			expectedValue := (tc.value >> 4) % 2
 			gotValue := cpu.registers.f.getCarry()
 
 			if expectedValue != gotValue {
@@ -113,10 +113,10 @@ func TestFlagsGetters(t *testing.T) {
 		for _, tc := range testCases {
 			cpu.registers.f.setValue(tc.value)
 
-			expectedZ := (tc.value>>7)&1 == 1
-			expectedN := (tc.value>>6)&1 == 1
-			expectedH := (tc.value>>5)&1 == 1
-			expectedC := (tc.value>>4)&1 == 1
+			expectedZ := tc.value&128 > 0
+			expectedN := tc.value&64 > 0
+			expectedH := tc.value&32 > 0
+			expectedC := tc.value&16 > 0
 			gotZ := cpu.registers.f.getZ()
 			gotN := cpu.registers.f.getN()
 			gotH := cpu.registers.f.getH()

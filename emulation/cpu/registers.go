@@ -79,72 +79,72 @@ func (r *registers) getPC() uint16 {
 	return r.pc
 }
 
-func (r *registers) setA(v uint8) {
-	r.a = v
+func (r *registers) setA(value uint8) {
+	r.a = value
 }
 
-func (r *registers) setF(v uint8) {
-	r.f.setValue(v)
+func (r *registers) setF(value uint8) {
+	r.f.setValue(value)
 }
 
-func (r *registers) setB(v uint8) {
-	r.b = v
+func (r *registers) setB(value uint8) {
+	r.b = value
 }
 
-func (r *registers) setC(v uint8) {
-	r.c = v
+func (r *registers) setC(value uint8) {
+	r.c = value
 }
 
-func (r *registers) setD(v uint8) {
-	r.d = v
+func (r *registers) setD(value uint8) {
+	r.d = value
 }
 
-func (r *registers) setE(v uint8) {
-	r.e = v
+func (r *registers) setE(value uint8) {
+	r.e = value
 }
 
-func (r *registers) setH(v uint8) {
-	r.h = v
+func (r *registers) setH(value uint8) {
+	r.h = value
 }
 
-func (r *registers) setL(v uint8) {
-	r.l = v
+func (r *registers) setL(value uint8) {
+	r.l = value
 }
 
-func (r *registers) setAF(v uint16) {
-	msb := uint8(v >> 8)
-	lsb := uint8(v & 0xFF)
+func (r *registers) setAF(value uint16) {
+	msb := uint8(value >> 8)
+	lsb := uint8(value & 0xFF)
 	r.setA(msb)
 	r.setF(lsb)
 }
 
-func (r *registers) setBC(v uint16) {
-	msb := uint8(v >> 8)
-	lsb := uint8(v & 0xFF)
+func (r *registers) setBC(value uint16) {
+	msb := uint8(value >> 8)
+	lsb := uint8(value & 0xFF)
 	r.setB(msb)
 	r.setC(lsb)
 }
 
-func (r *registers) setDE(v uint16) {
-	msb := uint8(v >> 8)
-	lsb := uint8(v & 0xFF)
+func (r *registers) setDE(value uint16) {
+	msb := uint8(value >> 8)
+	lsb := uint8(value & 0xFF)
 	r.setD(msb)
 	r.setE(lsb)
 }
 
-func (r *registers) setHL(v uint16) {
-	msb := uint8(v >> 8)
-	lsb := uint8(v & 0xFF)
+func (r *registers) setHL(value uint16) {
+	msb := uint8(value >> 8)
+	lsb := uint8(value & 0xFF)
 	r.setH(msb)
 	r.setL(lsb)
 }
 
-func (r *registers) setSP(v uint16) {
-	r.sp = v
+func (r *registers) setSP(value uint16) {
+	r.sp = value
 }
 
-func (r *registers) setPC(v uint16) {
-	r.pc = v
+func (r *registers) setPC(value uint16) {
+	r.pc = value
 }
 
 func (r *registers) incA() {

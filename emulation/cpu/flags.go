@@ -17,38 +17,38 @@ func (f *flags) getValue() uint8 {
 
 // setValue sets the value of the F register.
 // Four least significant (rightmost) bits are always cleared
-func (f *flags) setValue(v uint8) {
-	f.value = v & 0xF0
+func (f *flags) setValue(value uint8) {
+	f.value = value & 0xF0
 }
 
 // getCarry returns 1 if the Carry flag is set, 0 otherwise
 func (f *flags) getCarry() uint8 {
-	return (f.value >> 4) % 2
+	return (f.value >> 4) & 1
 }
 
 // getZ returns true if the Zero flag is set, false otherwise
 func (f *flags) getZ() bool {
-	return (f.value & 128) > 0
+	return (f.value>>7)&1 == 1
 }
 
 // getZ returns true if the Subtract flag is set, false otherwise
 func (f *flags) getN() bool {
-	return (f.value & 64) > 0
+	return (f.value>>6)&1 == 1
 }
 
 // getZ returns true if the Half Carry flag is set, false otherwise
 func (f *flags) getH() bool {
-	return (f.value & 32) > 0
+	return (f.value>>5)&1 == 1
 }
 
 // getZ returns true if the Carry flag is set, false otherwise
 func (f *flags) getC() bool {
-	return (f.value & 16) > 0
+	return (f.value>>4)&1 == 1
 }
 
 // setZ sets the value of the Zero flag
-func (f *flags) setZ(v bool) {
-	if v {
+func (f *flags) setZ(value bool) {
+	if value {
 		f.value |= 128
 	} else {
 		f.value &= 127
@@ -56,8 +56,8 @@ func (f *flags) setZ(v bool) {
 }
 
 // setN sets the value of the Subtract flag
-func (f *flags) setN(v bool) {
-	if v {
+func (f *flags) setN(value bool) {
+	if value {
 		f.value |= 64
 	} else {
 		f.value &= 191
@@ -65,8 +65,8 @@ func (f *flags) setN(v bool) {
 }
 
 // setH sets the value of the Half Carry flag
-func (f *flags) setH(v bool) {
-	if v {
+func (f *flags) setH(value bool) {
+	if value {
 		f.value |= 32
 	} else {
 		f.value &= 223
@@ -74,8 +74,8 @@ func (f *flags) setH(v bool) {
 }
 
 // setC sets the value of the Carry flag
-func (f *flags) setC(v bool) {
-	if v {
+func (f *flags) setC(value bool) {
+	if value {
 		f.value |= 16
 	} else {
 		f.value &= 239
