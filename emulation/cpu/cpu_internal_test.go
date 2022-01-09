@@ -44,7 +44,7 @@ func read16BitOperand(c *CPU) uint16 {
 	return value
 }
 
-// TODO(somerussianlad) Write tests for cpu.update()
+// TODO(somerussianlad): Write tests for cpu.update()
 
 func TestEnableHalt(t *testing.T) {
 	memory := memory.NewDMGMemory()

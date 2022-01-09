@@ -7,10 +7,45 @@ import (
 	"gbmu/emulation/memory"
 )
 
-// TODO(somerussianlad) Complete this test with remaining registers
+// TODO(somerussianlad): LCDC methods to test
+//
+// func (l *LCD) IsEnabled() bool
+// func (l *LCD) IsWINEnabled() bool
+// func (l *LCD) IsOBJEnabled() bool
+// func (l *LCD) IsBGEnabled() bool
+// func (l *LCD) GetWINTileMapAddr() uint16
+// func (l *LCD) GetBGTileMapAddr() uint16
+// func (l *LCD) GetBGAndWINTileDataAddr() (uint16, bool)
+// func (l *LCD) IsOBJDoubleSize() bool
+
+// TODO(somerussianlad): STAT methods to test
+//
+// func (l *LCD) IsLYCInterruptSourceEnabled() bool
+// func (l *LCD) IsOAMInterruptSourceEnabled() bool
+// func (l *LCD) IsVBlankInterruptSourceEnabled() bool
+// func (l *LCD) IsHBlankInterruptSourceEnabled() bool
+// func (l *LCD) SetLYCFlag(value bool)
+// func (l *LCD) SetMode(value bool)
+
+// TODO(somerussianlad): Position and scrolling methods to test
+//
+// func (l *LCD) GetSCY() uint8
+// func (l *LCD) GetSCX() uint8
+// func (l *LCD) GetLY() uint8
+// func (l *LCD) GetLYC() uint8
+// func (l *LCD) GetWY() uint8
+// func (l *LCD) GetWX() uint8
+// func (l *LCD) SetSCY(value uint8)
+// func (l *LCD) SetSCX(value uint8)
+// func (l *LCD) SetLYC(value uint8)
+// func (l *LCD) SetWY(value uint8)
+// func (l *LCD) SetWX(value uint8)
+// func (l *LCD) IncLY()
+
 func TestLCDHandlers(t *testing.T) {
 	memory := memory.NewDMGMemory()
-	lcd := NewLCD(memory)
+	interrupts := NewInterrupts(memory)
+	lcd := NewLCD(memory, interrupts.Request)
 
 	testCases := []struct {
 		value uint8

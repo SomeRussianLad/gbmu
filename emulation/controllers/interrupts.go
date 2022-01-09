@@ -58,8 +58,8 @@ func NewInterrupts(memory memory.Memory) *Interrupts {
 	}
 
 	for _, h := range handlers {
-		memory.RegisterGetter(h.addr, h.getter)
-		memory.RegisterSetter(h.addr, h.setter)
+		memory.AddGetter(h.addr, h.getter)
+		memory.AddSetter(h.addr, h.setter)
 	}
 
 	return interrupts
@@ -99,12 +99,16 @@ func (i *Interrupts) Pending() (uint8, bool) {
 	switch {
 	case pending&INT_VBLANK == INT_VBLANK:
 		return INT_VBLANK, true
+
 	case pending&INT_LCD == INT_LCD:
 		return INT_LCD, true
+
 	case pending&INT_TIMER == INT_TIMER:
 		return INT_TIMER, true
+
 	case pending&INT_SERIAL == INT_SERIAL:
 		return INT_SERIAL, true
+
 	case pending&INT_JOYPAD == INT_JOYPAD:
 		return INT_JOYPAD, true
 	}

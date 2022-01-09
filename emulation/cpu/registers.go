@@ -15,7 +15,18 @@ type registers struct {
 
 func newRegisters() *registers {
 	flags := newFlags()
-	return &registers{f: flags}
+	return &registers{
+		// a:  0x01,
+		f: flags,
+		// b:  0x00,
+		// c:  0x13,
+		// d:  0x00,
+		// e:  0xD8,
+		// h:  0x01,
+		// l:  0x4D,
+		// sp: 0xFFFE,
+		// pc: 0x0100,
+	}
 }
 
 func (r *registers) getA() uint8 {

@@ -5,11 +5,11 @@ import "gbmu/emulation/memory"
 const ADDR_DMA_TRANSFER = uint16(0xFF46)
 
 type DMA struct {
+	memory memory.Memory
+
 	transfer   uint8
 	isLaunched bool   // isLaunched is set to true if DMA transfer is in progress, false otherwise
 	ptr        uint16 // ptr stores the least significant byte of src and dst addresses of the current transfer iteration
-
-	memory memory.Memory
 }
 
 func NewDMA(memory memory.Memory) *DMA {
@@ -24,8 +24,8 @@ func NewDMA(memory memory.Memory) *DMA {
 	}
 
 	for _, h := range handlers {
-		memory.RegisterGetter(h.addr, h.getter)
-		memory.RegisterSetter(h.addr, h.setter)
+		memory.AddGetter(h.addr, h.getter)
+		memory.AddSetter(h.addr, h.setter)
 	}
 
 	return dma
@@ -37,7 +37,7 @@ func (d *DMA) Update(cycles int) {
 		dstAddr := uint16(0xFE00) + d.ptr
 
 		value := d.memory.Read(srcAddr)
-		d.memory.Write(dstAddr, value) // TODO(somerussianlad) Come up with a fix! Write will be ignored in LCD Mode 2-3
+		d.memory.Write(dstAddr, value) // TODO(somerussianlad): Come up with a fix! Write will be ignored in LCD Mode 2-3
 
 		d.ptr++
 		if d.ptr == 160 {
@@ -55,7 +55,7 @@ func (d *DMA) dmaGetter() func() uint8 {
 
 func (d *DMA) dmaSetter() func(uint8) {
 	return func(value uint8) {
-		// TODO(somerussianlad) Is it us who must enforce the 0x00-0xF1 range? Do gamedevs respect it?
+		// TODO(somerussianlad): Is it us who must enforce the 0x00-0xF1 range? Do gamedevs respect it?
 		// d.transfer = value % 0xF2
 		d.transfer = value
 		d.isLaunched = true

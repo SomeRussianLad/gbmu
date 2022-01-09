@@ -7,7 +7,9 @@ type flags struct {
 }
 
 func newFlags() *flags {
-	return &flags{}
+	return &flags{
+		// value: 1 << 7,
+	}
 }
 
 // getValue returns the value of the F register.

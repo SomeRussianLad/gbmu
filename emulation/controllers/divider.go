@@ -22,8 +22,8 @@ func NewDivider(memory memory.Memory) *Divider {
 	}
 
 	for _, h := range handlers {
-		memory.RegisterGetter(h.addr, h.getter)
-		memory.RegisterSetter(h.addr, h.setter)
+		memory.AddGetter(h.addr, h.getter)
+		memory.AddSetter(h.addr, h.setter)
 	}
 
 	return divider

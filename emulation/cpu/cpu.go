@@ -11,6 +11,8 @@ import (
 //     Serial Port (Link Cable)
 //     DMA Transfer to OAM
 
+const CPU_CYCLE_LEN = 4
+
 type CPU struct {
 	memory memory.Memory
 
@@ -22,6 +24,7 @@ type CPU struct {
 	instructions instructions
 	registers    *registers
 
+	cycles   int
 	isHalted bool
 }
 
@@ -89,31 +92,31 @@ func (c *CPU) executeNextInstruction() int {
 	return c.instructions[opcode].cycles
 }
 
-func (c *CPU) update() {
-	var cycles int
+func (c *CPU) getSpeedMultplier() int {
+	return 1
+}
+
+func (c *CPU) Update() {
+	speedMultiplier := c.getSpeedMultplier()
+
+	c.cycles += speedMultiplier * CPU_CYCLE_LEN
+
+	if c.cycles < 4 {
+		return
+	}
 
 	if i, ok := c.interrupts.Pending(); ok {
 		c.disableHalt()
 		if c.interrupts.IsMasterEnabled() {
-			cycles += c.handleInterrupt(i)
+			c.cycles -= c.handleInterrupt(i)
 		}
 	}
 
 	if !c.isHalted {
-		cycles += c.executeNextInstruction()
+		c.cycles -= c.executeNextInstruction()
 	}
 
-	if cycles == 0 {
-		cycles = 4
-	}
-
-	c.divider.Update(cycles)
-	c.timer.Update(cycles)
-	c.dma.Update(cycles)
-}
-
-func (c *CPU) Run() {
-	for {
-		c.update()
-	}
+	c.divider.Update(speedMultiplier * CPU_CYCLE_LEN)
+	c.timer.Update(speedMultiplier * CPU_CYCLE_LEN)
+	c.dma.Update(speedMultiplier * CPU_CYCLE_LEN)
 }

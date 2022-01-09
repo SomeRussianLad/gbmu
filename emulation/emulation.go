@@ -3,65 +3,60 @@ package emulation
 import (
 	"gbmu/emulation/controllers"
 	"gbmu/emulation/cpu"
+	"gbmu/emulation/display"
 	"gbmu/emulation/memory"
 	"gbmu/emulation/ppu"
-	"sync"
 	"time"
 )
 
-const CYCLES = 4194304
-
 const (
-	MODE_0 = 16 << iota
-	MODE_1
-	MODE_2
-	MODE_3
+	EMULATION_CYCLES_PER_SECOND = 1024 * 64
+	EMULATION_DIVIDER           = 16
 )
 
 type Emulator struct {
-	cpu *cpu.CPU
-	ppu *ppu.PPU
-
-	wg *sync.WaitGroup
+	display display.Display
+	cpu     *cpu.CPU
+	ppu     *ppu.PPU
 }
 
 func NewEmulator() *Emulator {
-	emulator := &Emulator{}
-
 	memory := memory.NewDMGMemory()
 
 	interrupts := controllers.NewInterrupts(memory)
 	divider := controllers.NewDivider(memory)
 	timer := controllers.NewTimer(memory, interrupts.Request)
 	dma := controllers.NewDMA(memory)
-	lcd := controllers.NewLCD(memory)
-	// lcd := controllers.NewLCD(memory, interrupts.Request)
-	// joypad := controllers.NewJoypad(memory, interrupts.Request)
-	// sdt := controllers.NewSDT(memory, interrupts.Request)
+	lcd := controllers.NewLCD(memory, interrupts.Request)
+	joypad := controllers.NewJoypad(memory, interrupts.Request)
+	sdt := controllers.NewSDT(memory, interrupts.Request)
 
-	emulator.cpu = cpu.NewCPU(memory, interrupts, divider, timer, dma)
-	emulator.ppu = ppu.NewPPU(memory, lcd)
+	display := display.NewFyneGUI()
+	cpu := cpu.NewCPU(memory, interrupts, divider, timer, dma)
+	ppu := ppu.NewPPU(display, memory, lcd)
+
+	emulator := &Emulator{
+		display: display,
+		cpu:     cpu,
+		ppu:     ppu,
+	}
 
 	return emulator
 }
 
 func (e *Emulator) Run() {
-	quota := CYCLES / MODE_0
-	period := time.Second / MODE_0
+	cyclesQuota := EMULATION_CYCLES_PER_SECOND / EMULATION_DIVIDER
+	period := time.Second / EMULATION_DIVIDER
 
-	ticker := time.NewTicker(period)
-
-	go e.cpu.Run()
-	go e.ppu.Run()
-
-	for range ticker.C {
-		// TODO(somerussianlad) Both PUs request interrupts. Make sure no race condition occurs!
-		for q := quota; q > 0; q -= 4 {
-			e.wg.Add(2)
-			// g.cpu.nextUpdate <- struct{}
-			// g.ppu.nextUpdate <- struct{}
-			e.wg.Wait()
+	go func() {
+		ticker := time.NewTicker(period)
+		for range ticker.C {
+			for cq := cyclesQuota; cq > 0; cq -= 4 {
+				e.cpu.Update()
+				e.ppu.Update()
+			}
 		}
-		quota += CYCLES
-	}
+	}()
+
+	e.display.Run()
 }

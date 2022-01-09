@@ -739,7 +739,9 @@ func TestLDInstructions20(t *testing.T) {
 		testName := fmt.Sprintf("Executes %s", tc.instruction.mnemonic)
 		t.Run(testName, func(t *testing.T) {
 			randomizeRegisters(cpu.registers)
-			value1 := read16BitOperand(cpu)
+			lsb := uint16(cpu.memory.Read(cpu.registers.getPC()))
+			msb := uint16(cpu.memory.Read(cpu.registers.getPC() + 1))
+			value1 := msb<<8 | lsb
 			tc.instruction.exec(cpu)
 			value2 := tc.to()
 			if value1 != value2 {
@@ -8506,7 +8508,7 @@ func TestRSTInstructions1(t *testing.T) {
 	}
 }
 
-// TODO(somerussianlad) Finish these tests
+// TODO(somerussianlad): Finish these tests
 // DI
 func TestDI(t *testing.T) {
 	memory := memory.NewDMGMemory()

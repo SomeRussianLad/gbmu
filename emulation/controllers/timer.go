@@ -53,12 +53,12 @@ func NewTimer(memory memory.Memory, requestInterrupt func(uint8)) *Timer {
 	}{
 		{ADDR_TIM_COUNTER, timer.counterGetter(), timer.counterSetter()},
 		{ADDR_TIM_MODULO, timer.moduloGetter(), timer.moduloSetter()},
-		{ADDR_TIM_CONTROL, timer.controllerGetter(), timer.controlSetter()},
+		{ADDR_TIM_CONTROL, timer.controlGetter(), timer.controlSetter()},
 	}
 
 	for _, h := range handlers {
-		memory.RegisterGetter(h.addr, h.getter)
-		memory.RegisterSetter(h.addr, h.setter)
+		memory.AddGetter(h.addr, h.getter)
+		memory.AddSetter(h.addr, h.setter)
 	}
 
 	return timer
@@ -107,7 +107,7 @@ func (t *Timer) moduloGetter() func() uint8 {
 	}
 }
 
-func (t *Timer) controllerGetter() func() uint8 {
+func (t *Timer) controlGetter() func() uint8 {
 	return func() uint8 {
 		return t.control
 	}
@@ -128,7 +128,7 @@ func (t *Timer) moduloSetter() func(uint8) {
 func (t *Timer) controlSetter() func(uint8) {
 	return func(value uint8) {
 		t.control = value
-		// TODO(somerussianlad) Test this with the working emulator
+		// TODO(somerussianlad): Test this with the working emulator
 		// Apparently the inner cycles counter should be reset only when switching to the different frequency in TAC
 		t.cycles = 0
 	}
