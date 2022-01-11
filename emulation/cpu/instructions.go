@@ -557,18 +557,14 @@ func newInstructions() instructions {
 //     E1,             E5, E7,     E9, EA,         EF,
 //     F1,             F5, F7,         FA,         FF,
 
-func swapBytes(value uint16) uint16 {
-	return value>>8 | value<<8
-}
-
 func (c *CPU) read8BitOperand() uint8 {
 	value := c.readPC()
 	return value
 }
 
 func (c *CPU) read16BitOperand() uint16 {
-	msb := uint16(c.readPC())
 	lsb := uint16(c.readPC())
+	msb := uint16(c.readPC())
 	value := msb<<8 | lsb
 	return value
 }
@@ -578,7 +574,7 @@ func (c *CPU) instruction00() {
 }
 
 func (c *CPU) instruction01() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	c.registers.setBC(value)
 }
 
@@ -627,7 +623,7 @@ func (c *CPU) instruction07() {
 }
 
 func (c *CPU) instruction08() {
-	addr := swapBytes(c.read16BitOperand())
+	addr := c.read16BitOperand()
 	lsb := uint8(c.registers.getSP() & 0xFF)
 	msb := uint8(c.registers.getSP() >> 8)
 	c.memory.Write(addr, lsb)
@@ -695,7 +691,7 @@ func (c *CPU) instruction10() {
 }
 
 func (c *CPU) instruction11() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	c.registers.setDE(value)
 }
 
@@ -818,7 +814,7 @@ func (c *CPU) instruction20() {
 }
 
 func (c *CPU) instruction21() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	c.registers.setHL(value)
 }
 
@@ -956,7 +952,7 @@ func (c *CPU) instruction30() {
 }
 
 func (c *CPU) instruction31() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	c.registers.setSP(value)
 }
 
@@ -2085,7 +2081,7 @@ func (c *CPU) instructionC1() {
 }
 
 func (c *CPU) instructionC2() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	instruction := c.instructions[0xC2]
 	if !c.registers.f.getZ() {
 		c.registers.setPC(value)
@@ -2097,12 +2093,12 @@ func (c *CPU) instructionC2() {
 }
 
 func (c *CPU) instructionC3() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	c.registers.setPC(value)
 }
 
 func (c *CPU) instructionC4() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	instruction := c.instructions[0xC4]
 	if !c.registers.f.getZ() {
 		addr := c.registers.getSP()
@@ -2175,7 +2171,7 @@ func (c *CPU) instructionC9() {
 }
 
 func (c *CPU) instructionCA() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	instruction := c.instructions[0xCA]
 	if c.registers.f.getZ() {
 		c.registers.setPC(value)
@@ -2191,7 +2187,7 @@ func (c *CPU) instructionCB() {
 }
 
 func (c *CPU) instructionCC() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	instruction := c.instructions[0xCC]
 	if c.registers.f.getZ() {
 		addr := c.registers.getSP()
@@ -2209,7 +2205,7 @@ func (c *CPU) instructionCC() {
 }
 
 func (c *CPU) instructionCD() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	addr := c.registers.getSP()
 	msb := uint8(c.registers.getPC() >> 8)
 	lsb := uint8(c.registers.getPC() & 0xFF)
@@ -2267,7 +2263,7 @@ func (c *CPU) instructionD1() {
 }
 
 func (c *CPU) instructionD2() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	instruction := c.instructions[0xD2]
 	if !c.registers.f.getC() {
 		c.registers.setPC(value)
@@ -2279,7 +2275,7 @@ func (c *CPU) instructionD2() {
 }
 
 func (c *CPU) instructionD4() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	instruction := c.instructions[0xD4]
 	if !c.registers.f.getC() {
 		addr := c.registers.getSP()
@@ -2353,7 +2349,7 @@ func (c *CPU) instructionD9() {
 }
 
 func (c *CPU) instructionDA() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	instruction := c.instructions[0xDA]
 	if c.registers.f.getC() {
 		c.registers.setPC(value)
@@ -2365,7 +2361,7 @@ func (c *CPU) instructionDA() {
 }
 
 func (c *CPU) instructionDC() {
-	value := swapBytes(c.read16BitOperand())
+	value := c.read16BitOperand()
 	instruction := c.instructions[0xDC]
 	if c.registers.f.getC() {
 		addr := c.registers.getSP()
@@ -2481,7 +2477,7 @@ func (c *CPU) instructionE9() {
 }
 
 func (c *CPU) instructionEA() {
-	addr := swapBytes(c.read16BitOperand())
+	addr := c.read16BitOperand()
 	value := c.registers.getA()
 	c.memory.Write(addr, value)
 }
@@ -2587,7 +2583,7 @@ func (c *CPU) instructionF9() {
 }
 
 func (c *CPU) instructionFA() {
-	addr := swapBytes(c.read16BitOperand())
+	addr := c.read16BitOperand()
 	value := c.memory.Read(addr)
 	c.registers.setA(value)
 }

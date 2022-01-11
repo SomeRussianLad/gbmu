@@ -771,11 +771,13 @@ func TestLDInstructions21(t *testing.T) {
 			tc.instruction.exec(cpu)
 			value1 := cpu.memory.Read(addr)
 			value2 := cpu.memory.Read(addr + 1)
-			if value1 != uint8(cpu.registers.getSP()&0xFF) {
-				t.Errorf("Expected 0x%02X, got 0x%02X", value1, uint8(cpu.registers.getSP()&0xFF))
+			lsb := uint8(cpu.registers.getSP() & 0xFF)
+			msb := uint8(cpu.registers.getSP() >> 8)
+			if value1 != lsb {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value1, lsb)
 			}
-			if value2 != uint8(cpu.registers.getSP()>>8) {
-				t.Errorf("Expected 0x%02X, got 0x%02X", value2, uint8(cpu.registers.getSP()>>8))
+			if value2 != msb {
+				t.Errorf("Expected 0x%02X, got 0x%02X", value2, msb)
 			}
 		})
 	}

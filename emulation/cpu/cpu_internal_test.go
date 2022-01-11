@@ -38,8 +38,8 @@ func read8BitOperand(c *CPU) uint8 {
 
 func read16BitOperand(c *CPU) uint16 {
 	addr := c.registers.getPC()
-	msb := uint16(c.memory.Read(addr))
-	lsb := uint16(c.memory.Read(addr + 1))
+	lsb := uint16(c.memory.Read(addr))
+	msb := uint16(c.memory.Read(addr + 1))
 	value := msb<<8 | lsb
 	return value
 }
